@@ -1,0 +1,1698 @@
+<!-- templates/combos.html -->
+{% extends "base.html" %}
+
+{% block title %}Combos y Ofertas - POS Argentina{% endblock %}
+
+{% block head %}
+    <style>
+    /* Estilos para búsqueda de productos en combos */
+    .producto-search-container {
+        position: relative;
+    }
+
+    .producto-search-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: white;
+        border: 1px solid #dee2e6;
+        border-top: none;
+        border-radius: 0 0 6px 6px;
+        max-height: 250px;
+        overflow-y: auto;
+        z-index: 1050;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+
+    .producto-search-item {
+        padding: 12px 16px;
+        cursor: pointer;
+        border-bottom: 1px solid #f8f9fa;
+        transition: background-color 0.2s;
+    }
+
+    .producto-search-item:hover, 
+    .producto-search-item.active {
+        background-color: #e3f2fd;
+    }
+
+    .producto-search-item:last-child {
+        border-bottom: none;
+    }
+
+    .producto-codigo {
+        font-weight: bold;
+        color: #0066cc;
+        font-size: 0.9em;
+    }
+
+    .producto-nombre {
+        color: #333;
+        margin: 2px 0;
+    }
+
+    .producto-precio {
+        color: #28a745;
+        font-weight: 600;
+        font-size: 0.9em;
+    }
+
+    .no-results {
+        padding: 16px;
+        text-align: center;
+        color: #6c757d;
+        font-style: italic;
+    }
+
+    .loading-spinner {
+        padding: 16px;
+        text-align: center;
+        color: #007bff;
+    }
+
+    .search-icon {
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #6c757d;
+        pointer-events: none;
+    }
+
+    .producto-search-input {
+        padding-right: 40px;
+    }
+
+    .producto-seleccionado {
+        background-color: #d4edda;
+        border-color: #c3e6cb;
+    }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-tags"></i> Gestión de Combos y Ofertas</h1>
+    <button class="btn btn-success" onclick="mostrarModalCrearCombo()">
+        <i class="fas fa-plus"></i> Crear Nueva Oferta
+    </button>
+</div>
+
+<!-- Estadísticas rápidas -->
+<!-- Estadísticas rápidas CORREGIDAS - Compatible Jinja2 - VERSIÓN SEGURA -->
+<!-- Estadísticas rápidas CORREGIDAS - Compatible Jinja2 - VERSIÓN SEGURA -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-warning text-dark">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title mb-0">Total Ofertas</h5>
+                        <h3 class="mb-0">
+                            {% set total_combos = combos|selectattr('es_combo')|list|length %}
+                            {{ total_combos }}
+                        </h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-tags fa-2x opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title mb-0">Ofertas Activas</h5>
+                        <h3 class="mb-0">
+                            {% set ofertas_activas = combos|selectattr('es_combo')|selectattr('activo')|list|length %}
+                            {{ ofertas_activas }}
+                        </h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-check-circle fa-2x opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title mb-0">Descuento Promedio</h5>
+                        <h3 class="mb-0">
+                            {% set descuentos_validos = [] %}
+                            
+                            {% for combo in combos %}
+                                {% if combo.es_combo and combo.producto_base and combo.cantidad_combo and combo.activo %}
+                                    {% set precio_normal = combo.producto_base.precio * combo.cantidad_combo %}
+                                    {% if precio_normal > 0 and combo.precio < precio_normal %}
+                                        {% set descuento_porcentaje = ((precio_normal - combo.precio) / precio_normal * 100) %}
+                                        {% if descuentos_validos.append(descuento_porcentaje) %}{% endif %}
+                                    {% endif %}
+                                {% endif %}
+                            {% endfor %}
+                            
+                            {% if descuentos_validos|length > 0 %}
+                                {% set suma_descuentos = descuentos_validos|sum %}
+                                {{ "%.1f"|format(suma_descuentos / descuentos_validos|length) }}%
+                            {% else %}
+                                0.0%
+                            {% endif %}
+                        </h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-percentage fa-2x opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-danger text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title mb-0">Ahorro Total</h5>
+                        <h3 class="mb-0">
+                            {% set ahorros_validos = [] %}
+                            
+                            {% for combo in combos %}
+                                {% if combo.es_combo and combo.producto_base and combo.cantidad_combo and combo.activo %}
+                                    {% set precio_normal = combo.producto_base.precio * combo.cantidad_combo %}
+                                    {% if precio_normal > 0 and combo.precio < precio_normal %}
+                                        {% set ahorro_total = precio_normal - combo.precio %}
+                                        {% if ahorros_validos.append(ahorro_total) %}{% endif %}
+                                    {% endif %}
+                                {% endif %}
+                            {% endfor %}
+                            
+                            {% if ahorros_validos|length > 0 %}
+                                ${{ "%.0f"|format(ahorros_validos|sum) }}
+                            {% else %}
+                                $0
+                            {% endif %}
+                        </h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-dollar-sign fa-2x opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filtros -->
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-4">
+                <label class="form-label">Buscar combos</label>
+                <input type="text" class="form-control" id="buscarCombo" placeholder="Código, nombre o producto base...">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Estado</label>
+                <select class="form-select" id="filtroEstado">
+                    <option value="">Todos</option>
+                    <option value="activo">Activos</option>
+                    <option value="inactivo">Inactivos</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Descuento</label>
+                <select class="form-select" id="filtroDescuento">
+                    <option value="">Todos</option>
+                    <option value="alto">Alto (>30%)</option>
+                    <option value="medio">Medio (15-30%)</option>
+                    <option value="bajo">Bajo (<15%)</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">&nbsp;</label>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary" onclick="aplicarFiltrosCombos()">
+                        <i class="fas fa-search"></i> Buscar
+                    </button>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">&nbsp;</label>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-secondary" onclick="limpiarFiltrosCombos()">
+                        <i class="fas fa-eraser"></i> Limpiar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Lista de combos -->
+<div class="card">
+    <div class="card-header bg-warning text-dark">
+        <h5><i class="fas fa-list"></i> Listado de Combos y Ofertas</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover" id="tablaCombos">
+                <thead class="table-warning">
+                    <tr>
+                        <th>Código</th>
+                        <th>Nombre de la Oferta</th>
+                        <th>Producto Base</th>
+                        <th>Cantidad</th>
+                        <th>Precio Normal</th>
+                        <th>Precio Oferta</th>
+                        <th>Descuento</th>
+                        <th>Ahorro</th>
+                        <th>Stock</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for combo in combos %}
+                    <tr>
+                        <td><code>{{ combo.codigo }}</code></td>
+                        <td>
+                            <strong>{{ combo.nombre }}</strong>
+                            <br><span class="badge bg-warning text-dark">OFERTA</span>
+                            {% if combo.descripcion %}
+                                <br><small class="text-muted">{{ combo.descripcion[:50] }}{% if combo.descripcion|length > 50 %}...{% endif %}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if combo.producto_base %}
+                                <strong>{{ combo.producto_base.codigo }}</strong><br>
+                                <small class="text-muted">{{ combo.producto_base.nombre }}</small><br>
+                                <span class="badge bg-info">${{ "%.2f"|format(combo.producto_base.precio) }}</span>
+                            {% else %}
+                                <span class="text-muted">Sin base</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-info">{{ combo.cantidad_combo }}x</span>
+                        </td>
+                        <td class="text-end">
+                            {% if combo.producto_base %}
+                                {% set precio_normal = combo.producto_base.precio * combo.cantidad_combo %}
+                                <span class="text-muted">${{ "%.2f"|format(precio_normal) }}</span>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <strong class="text-success">${{ "%.2f"|format(combo.precio) }}</strong>
+                        </td>
+                        <td class="text-center">
+                            {% if combo.producto_base %}
+                                {% set precio_normal = combo.producto_base.precio * combo.cantidad_combo %}
+                                {% set descuento = ((precio_normal - combo.precio) / precio_normal * 100) %}
+                                {% if descuento > 30 %}
+                                    <span class="badge bg-danger">-{{ "%.1f"|format(descuento) }}%</span>
+                                {% elif descuento > 15 %}
+                                    <span class="badge bg-warning text-dark">-{{ "%.1f"|format(descuento) }}%</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">-{{ "%.1f"|format(descuento) }}%</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if combo.producto_base %}
+                                {% set precio_normal = combo.producto_base.precio * combo.cantidad_combo %}
+                                {% set ahorro = precio_normal - combo.precio %}
+                                <span class="text-success"><strong>${{ "%.0f"|format(ahorro) }}</strong></span>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if combo.stock <= 0 %}
+                                <span class="badge bg-danger">{{ combo.stock }}</span>
+                            {% elif combo.stock < 10 %}
+                                <span class="badge bg-warning text-dark">{{ combo.stock }}</span>
+                            {% else %}
+                                <span class="badge bg-success">{{ combo.stock }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if combo.activo %}
+                                <span class="badge bg-success">Activo</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Inactivo</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-warning" onclick="editarCombo({{ combo.id }})" title="Editar">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn btn-info" onclick="ajustarStock({{ combo.id }})" title="Ajustar Stock">
+                                    <i class="fas fa-boxes"></i>
+                                </button>
+                                <button class="btn btn-{% if combo.activo %}danger{% else %}success{% endif %}" onclick="toggleCombo({{ combo.id }})" title="{% if combo.activo %}Desactivar{% else %}Activar{% endif %}">
+                                    <i class="fas fa-power-off"></i>
+                                </button>
+                                <button class="btn btn-secondary" onclick="duplicarCombo({{ combo.id }})" title="Duplicar">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                                <button class="btn btn-outline-danger" onclick="eliminarCombo({{ combo.id }})" title="Eliminar Definitivamente">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            
+            <!-- Mensaje cuando no hay combos -->
+            {% if not combos %}
+            <div class="text-center text-muted py-5">
+                <i class="fas fa-tags fa-3x mb-3 opacity-50"></i>
+                <h5>No hay combos/ofertas creados</h5>
+                <p>Haz clic en "Crear Nueva Oferta" para comenzar</p>
+                <button class="btn btn-success btn-lg" onclick="mostrarModalCrearCombo()">
+                    <i class="fas fa-plus"></i> Crear Mi Primera Oferta
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Modal para crear/editar combo -->
+<div class="modal fade" id="modalCrearCombo" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title" id="tituloModalCombo">
+                    <i class="fas fa-tags"></i> Crear Nueva Oferta/Combo
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="formCrearCombo">
+                    <input type="hidden" id="combo_id_edit">
+                    
+                    <div class="row">
+                        <!-- Selección de producto base -->
+                        <!-- Búsqueda de producto base MEJORADA -->
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Producto Base *</label>
+                                <div class="producto-search-container">
+                                    <input 
+                                        type="text" 
+                                        class="form-control producto-search-input" 
+                                        id="buscar_producto_base" 
+                                        placeholder="Escribe para buscar producto..."
+                                        autocomplete="off"
+                                        required>
+                                    <i class="fas fa-search search-icon"></i>
+                                    
+                                    <!-- Hidden input para guardar el ID seleccionado -->
+                                    <input type="hidden" id="producto_base_combo" required>
+                                    
+                                    <!-- Dropdown de resultados -->
+                                    <div class="producto-search-dropdown" id="dropdown_productos" style="display: none;">
+                                        <!-- Los resultados se cargan dinámicamente aquí -->
+                                    </div>
+                                </div>
+                                <small class="form-text text-muted">
+                                    <i class="fas fa-info-circle"></i> Escribe al menos 2 caracteres para buscar
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <!-- Cantidad del combo -->
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Cantidad en el Combo *</label>
+                                <input type="number" class="form-control" id="cantidad_combo" 
+                                       step="0.001" min="0.001" required onchange="calcularPrecioCombo()">
+                                <small class="form-text text-muted">Cuántas unidades incluye la oferta</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Información del producto base -->
+                    <div id="info_producto_base" class="alert alert-info" style="display: none;">
+                        <!-- Se llena dinámicamente -->
+                    </div>
+                    
+                    <div class="row">
+                        <!-- Código del combo -->
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Código del Combo</label>
+                                <input type="text" class="form-control" id="codigo_combo" placeholder="Se genera automáticamente">
+                                <small class="form-text text-muted">Dejar vacío para generar automáticamente</small>
+                            </div>
+                        </div>
+                        
+                        <!-- Nombre del combo -->
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Nombre del Combo</label>
+                                <input type="text" class="form-control" id="nombre_combo" placeholder="Se genera automáticamente">
+                                <small class="form-text text-muted">Dejar vacío para generar automáticamente</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Precios -->
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">Precio Normal</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">$</span>
+                                    <input type="text" class="form-control" id="precio_normal_combo" readonly>
+                                </div>
+                                <small class="form-text text-muted">Precio sin descuento</small>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">Precio de Oferta *</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">$</span>
+                                    <<input type="number" class="form-control" id="precio_combo" 
+                                        step="0.01" min="0.01" max="99999999.99" required onchange="calcularDescuento()">
+                                </div>
+                                <small class="form-text text-muted">Precio final del combo</small>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">Descuento</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="descuento_combo" readonly>
+                                    <span class="input-group-text">%</span>
+                                </div>
+                                <small class="form-text text-muted">Porcentaje de descuento</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Información del descuento -->
+                    <div id="info_descuento" class="alert alert-success" style="display: none;">
+                        <!-- Se llena dinámicamente -->
+                    </div>
+                    
+                    <!-- Descripción opcional -->
+                    <div class="mb-3">
+                        <label class="form-label">Descripción</label>
+                        <textarea class="form-control" id="descripcion_combo" rows="3" 
+                                  placeholder="Descripción opcional del combo"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Cancelar
+                </button>
+                <button type="button" class="btn btn-warning" onclick="crearCombo()">
+                    <i class="fas fa-save"></i> <span id="btnComboTexto">Crear Oferta</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Ajustar Stock -->
+<div class="modal fade" id="modalStock" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-boxes"></i> Ajustar Stock del Combo
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="infoComboStock"></div>
+                <form id="formStock">
+                    <input type="hidden" id="stockComboId">
+                    <div class="mb-3">
+                        <label for="tipoMovimiento" class="form-label">Tipo de movimiento</label>
+                        <select class="form-select" id="tipoMovimiento">
+                            <option value="entrada">Entrada (Agregar stock)</option>
+                            <option value="salida">Salida (Quitar stock)</option>
+                            <option value="ajuste">Ajuste (Establecer cantidad exacta)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="cantidadStock" class="form-label">Cantidad</label>
+                        <input type="number" class="form-control" id="cantidadStock" min="0" required>
+                        <div class="form-text" id="ayudaCantidad">Ingrese la cantidad a agregar</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="motivo" class="form-label">Motivo</label>
+                        <input type="text" class="form-control" id="motivo" placeholder="Ej: Compra, Inventario, etc.">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-info" onclick="guardarStock()">
+                    <i class="fas fa-save"></i> Aplicar Cambio
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Variables globales
+let productosBase = [];
+let stockActual = 0;
+
+// ===== FUNCIONES PARA COMBOS =====
+
+
+
+
+
+function mostrarModalCrearCombo() {
+    console.log('🎯 Abriendo modal crear combo...');
+    
+    // Limpiar eventos anteriores primero
+    limpiarEventosBusqueda();
+    
+    document.getElementById('formCrearCombo').reset();
+    document.getElementById('combo_id_edit').value = '';
+    limpiarSeleccion();
+    
+    // Resetear título
+    document.getElementById('tituloModalCombo').innerHTML = '<i class="fas fa-tags"></i> Crear Nueva Oferta/Combo';
+    document.getElementById('btnComboTexto').textContent = 'Crear Oferta';
+    
+    const modal = new bootstrap.Modal(document.getElementById('modalCrearCombo'));
+    modal.show();
+    
+    // ✅ IMPORTANTE: Inicializar búsqueda DESPUÉS de que el modal esté completamente visible
+    modal._element.addEventListener('shown.bs.modal', function() {
+        inicializarBusquedaProductos();
+    }, { once: true }); // once: true para que solo se ejecute una vez
+    
+    console.log('✅ Modal combo abierto');
+}
+
+
+let busquedaTimeout = null;
+let selectedIndex = -1;
+let isDropdownVisible = false;
+
+function inicializarBusquedaProductos() {
+    const inputBusqueda = document.getElementById('buscar_producto_base');
+    const dropdown = document.getElementById('dropdown_productos');
+    
+    if (!inputBusqueda || !dropdown) {
+        console.warn('⚠️ Elementos de búsqueda no encontrados');
+        return;
+    }
+    
+    // ✅ LIMPIAR eventos anteriores para evitar duplicados
+    inputBusqueda.removeEventListener('input', buscarEnInput);
+    inputBusqueda.removeEventListener('keydown', manejarTeclas);
+    
+    // ✅ AGREGAR eventos limpios
+    inputBusqueda.addEventListener('input', buscarEnInput);
+    inputBusqueda.addEventListener('keydown', manejarTeclas);
+    
+    console.log('✅ Sistema de búsqueda inicializado correctamente');
+}
+
+// ✅ FUNCIÓN SEPARADA para el evento input
+function buscarEnInput() {
+    const termino = this.value.trim();
+    
+    console.log('🔍 Escribiendo:', termino);
+    
+    // Limpiar timeout anterior
+    clearTimeout(busquedaTimeout);
+    
+    if (termino.length < 2) {
+        ocultarDropdown();
+        if (termino.length === 0) {
+            limpiarSeleccion();
+        }
+        return;
+    }
+    
+    // Buscar con debounce de 300ms
+    busquedaTimeout = setTimeout(() => {
+        buscarProductosBase(termino);
+    }, 300);
+}
+
+// ✅ FUNCIÓN SEPARADA para manejar teclas
+function manejarTeclas(e) {
+    if (!isDropdownVisible) return;
+    
+    const dropdown = document.getElementById('dropdown_productos');
+    const items = dropdown.querySelectorAll('.producto-search-item');
+    
+    switch(e.key) {
+        case 'ArrowDown':
+            e.preventDefault();
+            selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+            actualizarSeleccionVisual(items);
+            break;
+            
+        case 'ArrowUp':
+            e.preventDefault();
+            selectedIndex = Math.max(selectedIndex - 1, -1);
+            actualizarSeleccionVisual(items);
+            break;
+            
+        case 'Enter':
+            e.preventDefault();
+            if (selectedIndex >= 0 && items[selectedIndex]) {
+                items[selectedIndex].click();
+            }
+            break;
+            
+        case 'Escape':
+            e.preventDefault();
+            ocultarDropdown();
+            break;
+    }
+}
+
+// ✅ FUNCIÓN para limpiar eventos cuando se cierra el modal
+function limpiarEventosBusqueda() {
+    const inputBusqueda = document.getElementById('buscar_producto_base');
+    if (inputBusqueda) {
+        inputBusqueda.removeEventListener('input', buscarEnInput);
+        inputBusqueda.removeEventListener('keydown', manejarTeclas);
+    }
+}
+
+function buscarProductosBase(termino) {
+   const dropdown = document.getElementById('dropdown_productos');
+   
+   dropdown.innerHTML = `
+       <div class="loading-spinner">
+           <i class="fas fa-spinner fa-spin"></i> Buscando productos...
+       </div>
+   `;
+   dropdown.style.display = 'block';
+   isDropdownVisible = true;
+   
+   console.log(`🔍 Buscando productos: "${termino}"`);
+   
+   fetch(`/buscar_productos_admin?buscar=${encodeURIComponent(termino)}&solo_combos=false`)
+       .then(response => response.json())
+       .then(data => {
+           if (data.success) {
+               const productos = data.productos.filter(p => p.activo && !p.es_combo);
+               mostrarResultadosBusqueda(productos, termino);
+           } else {
+               mostrarError('Error: ' + (data.error || 'Error desconocido'));
+           }
+       })
+       .catch(error => {
+           console.error('❌ Error en búsqueda:', error);
+           mostrarError('Error de conexión');
+       });
+}
+
+function mostrarResultadosBusqueda(productos, termino) {
+   const dropdown = document.getElementById('dropdown_productos');
+   selectedIndex = -1;
+   
+   if (productos.length === 0) {
+       dropdown.innerHTML = `
+           <div class="no-results">
+               <i class="fas fa-search"></i> No se encontraron productos para "${termino}"
+           </div>
+       `;
+       return;
+   }
+   
+   console.log(`📦 Mostrando ${productos.length} productos`);
+   
+   const html = productos.map((producto) => {
+       const codigoResaltado = resaltarTexto(producto.codigo, termino);
+       const nombreResaltado = resaltarTexto(producto.nombre, termino);
+       
+       return `
+           <div class="producto-search-item" 
+                onclick="seleccionarProducto(${producto.id}, '${producto.codigo}', '${escapeHtml(producto.nombre)}', ${producto.precio})">
+               <div class="producto-codigo">${codigoResaltado}</div>
+               <div class="producto-nombre">${nombreResaltado}</div>
+               <div class="producto-precio">$${producto.precio.toFixed(2)}</div>
+           </div>
+       `;
+   }).join('');
+   
+   dropdown.innerHTML = html;
+}
+
+function resaltarTexto(texto, termino) {
+   if (!termino) return texto;
+   
+   const regex = new RegExp(`(${escapeRegExp(termino)})`, 'gi');
+   return texto.replace(regex, '<strong style="background-color: #fff3cd;">$1</strong>');
+}
+
+function escapeRegExp(string) {
+   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function escapeHtml(text) {
+   return String(text).replace(/[&<>"']/g, function (s) {
+       return {
+           '&': '&amp;',
+           '<': '&lt;',
+           '>': '&gt;',
+           '"': '&quot;',
+           "'": '&#39;'
+       }[s];
+   });
+}
+
+function seleccionarProducto(id, codigo, nombre, precio) {
+   console.log(`✅ Seleccionado: ${codigo} - ${nombre} ($${precio})`);
+   
+   document.getElementById('buscar_producto_base').value = `${codigo} - ${nombre}`;
+   document.getElementById('producto_base_combo').value = id;
+   
+   const input = document.getElementById('buscar_producto_base');
+   input.classList.add('producto-seleccionado');
+   
+   ocultarDropdown();
+   actualizarInfoProductoBase(id, codigo, nombre, precio);
+   calcularPrecioCombo();
+}
+
+function actualizarSeleccionVisual(items) {
+   items.forEach(item => item.classList.remove('active'));
+   
+   if (selectedIndex >= 0 && items[selectedIndex]) {
+       items[selectedIndex].classList.add('active');
+       items[selectedIndex].scrollIntoView({ block: 'nearest' });
+   }
+}
+
+function ocultarDropdown() {
+   const dropdown = document.getElementById('dropdown_productos');
+   if (dropdown) {
+       dropdown.style.display = 'none';
+   }
+   isDropdownVisible = false;
+   selectedIndex = -1;
+}
+
+function mostrarError(mensaje) {
+   const dropdown = document.getElementById('dropdown_productos');
+   dropdown.innerHTML = `
+       <div class="no-results text-danger">
+           <i class="fas fa-exclamation-triangle"></i> ${mensaje}
+       </div>
+   `;
+}
+
+function limpiarSeleccion() {
+   document.getElementById('producto_base_combo').value = '';
+   
+   const input = document.getElementById('buscar_producto_base');
+   if (input) {
+       input.value = '';
+       input.classList.remove('producto-seleccionado');
+   }
+   
+   document.getElementById('info_producto_base').style.display = 'none';
+   document.getElementById('precio_normal_combo').value = '';
+   document.getElementById('info_descuento').style.display = 'none';
+}
+
+
+function actualizarInfoProductoBase(id, codigo, nombre, precio) {
+   const infoDiv = document.getElementById('info_producto_base');
+   
+   infoDiv.innerHTML = `
+       <h6><i class="fas fa-info-circle"></i> Producto Base Seleccionado</h6>
+       <div class="row">
+           <div class="col-md-4"><strong>Código:</strong> ${codigo}</div>
+           <div class="col-md-4"><strong>Producto:</strong> ${nombre}</div>
+           <div class="col-md-4"><strong>Precio unitario:</strong> $${precio.toFixed(2)}</div>
+       </div>
+   `;
+   infoDiv.style.display = 'block';
+}
+
+function calcularPrecioCombo() {
+    const productId = document.getElementById('producto_base_combo').value;
+    const cantidad = parseFloat(document.getElementById('cantidad_combo').value);
+    
+    if (!productId || !cantidad || cantidad <= 0) {
+        document.getElementById('precio_normal_combo').value = '';
+        return;
+    }
+    
+    // ✅ MÉTODO MEJORADO: Obtener precio del producto seleccionado
+    const inputText = document.getElementById('buscar_producto_base').value;
+    
+    // Buscar precio en el formato $123.45 o $1,234.56 o $1.234.567,89
+    const precioRegex = /\$([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{1,2})?)/;
+    const precioMatch = inputText.match(precioRegex);
+    
+    if (precioMatch) {
+        // Limpiar formato de precio (quitar puntos de miles, convertir coma decimal a punto)
+        let precioTexto = precioMatch[1];
+        
+        // Si tiene coma como separador decimal (formato argentino)
+        if (precioTexto.includes(',')) {
+            // Separar parte entera de decimal
+            const partes = precioTexto.split(',');
+            if (partes.length === 2) {
+                // Quitar puntos de miles de la parte entera
+                const parteEntera = partes[0].replace(/\./g, '');
+                const parteDecimal = partes[1];
+                precioTexto = parteEntera + '.' + parteDecimal;
+            }
+        } else {
+            // Formato con punto decimal - solo quitar puntos de miles (mantener último punto como decimal)
+            const puntos = precioTexto.split('.');
+            if (puntos.length > 2) {
+                // Hay puntos de miles
+                const parteDecimal = puntos.pop(); // Última parte es decimal
+                const parteEntera = puntos.join(''); // Unir el resto sin puntos
+                precioTexto = parteEntera + '.' + parteDecimal;
+            }
+        }
+        
+        const precioUnitario = parseFloat(precioTexto);
+        
+        if (!isNaN(precioUnitario)) {
+            const precioNormal = precioUnitario * cantidad;
+            
+            // ✅ FORMATEAR precio normal con separadores de miles
+            document.getElementById('precio_normal_combo').value = formatearPrecio(precioNormal);
+            
+            console.log('💰 Cálculo exitoso:');
+            console.log(`   Precio unitario: $${precioUnitario}`);
+            console.log(`   Cantidad: ${cantidad}`);
+            console.log(`   Precio normal: $${precioNormal}`);
+            
+            generarCodigoNombreAutomatico();
+            calcularDescuento();
+        } else {
+            console.warn('⚠️ No se pudo parsear el precio:', precioTexto);
+        }
+    } else {
+        console.warn('⚠️ No se encontró precio en el texto:', inputText);
+    }
+}
+
+// ✅ FUNCIÓN AUXILIAR para formatear precios con separadores de miles
+function formatearPrecio(numero) {
+    if (isNaN(numero)) return '0.00';
+    
+    return numero.toLocaleString('es-AR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+}
+
+// ✅ FUNCIÓN AUXILIAR para limpiar formato de precio antes de enviar al servidor
+function limpiarFormatoPrecio(precioFormateado) {
+    if (!precioFormateado) return 0;
+    
+    // Quitar todos los separadores y convertir coma decimal a punto
+    return parseFloat(
+        precioFormateado
+            .replace(/[^\d,-]/g, '') // Quitar todo excepto dígitos, coma y guión
+            .replace(/\./g, '')      // Quitar puntos de miles
+            .replace(/,/g, '.')      // Convertir coma decimal a punto
+    );
+}
+
+// ✅ FUNCIÓN MEJORADA para generar código y nombre automáticamente
+function generarCodigoNombreAutomatico() {
+    const inputText = document.getElementById('buscar_producto_base').value;
+    const cantidad = parseFloat(document.getElementById('cantidad_combo').value);
+    
+    if (!inputText || !cantidad) {
+        console.log('⚠️ No hay texto o cantidad para generar código/nombre');
+        return;
+    }
+    
+    console.log('🏷️ Generando código y nombre automático...');
+    console.log(`   Input: "${inputText}"`);
+    console.log(`   Cantidad: ${cantidad}`);
+    
+    // ✅ EXTRAER CÓDIGO del formato: "ABC123 - Nombre del producto"
+    const codigoMatch = inputText.match(/^([A-Z0-9\-_]+)/i);
+    if (!codigoMatch) {
+        console.warn('⚠️ No se pudo extraer código del texto');
+        return;
+    }
+    
+    const codigoBase = codigoMatch[1].toUpperCase();
+    
+    // ✅ EXTRAER NOMBRE del formato: "CODIGO - Nombre del producto"
+    const nombreMatch = inputText.match(/^[^-]+-\s*(.+?)(?:\s*\$|$)/);
+    if (!nombreMatch) {
+        console.warn('⚠️ No se pudo extraer nombre del texto');
+        return;
+    }
+    
+    const nombreBase = nombreMatch[1].trim();
+    
+    // ✅ GENERAR CÓDIGO del combo
+    const cantidadStr = cantidad.toString().replace('.', '').replace(',', '');
+    const codigoCombo = `${codigoBase}-${cantidadStr}UN`;
+    
+    // ✅ GENERAR NOMBRE del combo
+    const cantidadFormat = cantidad % 1 === 0 ? 
+        cantidad.toString() : 
+        cantidad.toFixed(3).replace(/\.?0+$/, ''); // Eliminar ceros innecesarios
+    
+    const nombreCombo = `${cantidadFormat} x ${nombreBase} (Oferta)`;
+    
+    // ✅ APLICAR solo si los campos están vacíos
+    const campoCodigo = document.getElementById('codigo_combo');
+    const campoNombre = document.getElementById('nombre_combo');
+    
+    if (!campoCodigo.value.trim()) {
+        campoCodigo.value = codigoCombo;
+        console.log(`   ✅ Código generado: ${codigoCombo}`);
+    } else {
+        console.log(`   ℹ️ Código ya tiene valor: ${campoCodigo.value}`);
+    }
+    
+    if (!campoNombre.value.trim()) {
+        campoNombre.value = nombreCombo;
+        console.log(`   ✅ Nombre generado: ${nombreCombo}`);
+    } else {
+        console.log(`   ℹ️ Nombre ya tiene valor: ${campoNombre.value}`);
+    }
+}
+
+
+function calcularDescuento() {
+    const precioNormalTexto = document.getElementById('precio_normal_combo').value;
+    const precioOferta = parseFloat(document.getElementById('precio_combo').value);
+    const infoDiv = document.getElementById('info_descuento');
+    
+    // ✅ LIMPIAR formato del precio normal
+    const precioNormal = limpiarFormatoPrecio(precioNormalTexto);
+    
+    if (!precioNormal || !precioOferta || precioOferta <= 0) {
+        document.getElementById('descuento_combo').value = '';
+        infoDiv.style.display = 'none';
+        return;
+    }
+    
+    if (precioOferta >= precioNormal) {
+        document.getElementById('descuento_combo').value = '0.00';
+        infoDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i> <strong>¡Atención!</strong> El precio de oferta es igual o mayor al precio normal.';
+        infoDiv.className = 'alert alert-warning';
+        infoDiv.style.display = 'block';
+        return;
+    }
+    
+    const descuento = ((precioNormal - precioOferta) / precioNormal) * 100;
+    const ahorro = precioNormal - precioOferta;
+    
+    document.getElementById('descuento_combo').value = descuento.toFixed(2);
+    
+    infoDiv.innerHTML = `
+        <i class="fas fa-check-circle"></i> <strong>¡Excelente oferta!</strong><br>
+        <div class="row mt-2">
+            <div class="col-md-4"><strong>Precio normal:</strong> $${formatearPrecio(precioNormal)}</div>
+            <div class="col-md-4"><strong>Precio oferta:</strong> $${formatearPrecio(precioOferta)}</div>
+            <div class="col-md-4"><strong>Ahorro:</strong> $${formatearPrecio(ahorro)} (${descuento.toFixed(1)}%)</div>
+        </div>
+    `;
+    infoDiv.className = 'alert alert-success';
+    infoDiv.style.display = 'block';
+}
+
+
+function crearCombo() {
+    console.log('🚀 Creando/editando combo...');
+    const form = document.getElementById('formCrearCombo');
+    
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+    
+    const comboId = document.getElementById('combo_id_edit').value;
+    const esEdicion = !!comboId;
+    
+    const datos = {
+        producto_base_id: parseInt(document.getElementById('producto_base_combo').value),
+        cantidad_combo: parseFloat(document.getElementById('cantidad_combo').value),
+        precio_combo: limpiarFormatoPrecio(document.getElementById('precio_combo').value),
+        codigo_combo: document.getElementById('codigo_combo').value.trim(),
+        nombre_combo: document.getElementById('nombre_combo').value.trim(),
+        descripcion_combo: document.getElementById('descripcion_combo').value.trim()
+    };
+    
+    // ✅ SI ES EDICIÓN, AGREGAR EL ID AL OBJETO DE DATOS
+    if (esEdicion) {
+        datos.id = parseInt(comboId);
+    }
+    
+    if (datos.cantidad_combo <= 0) {
+        alert('La cantidad debe ser mayor a 0');
+        return;
+    }
+    
+    if (datos.precio_combo <= 0) {
+        alert('El precio de oferta debe ser mayor a 0');
+        return;
+    }
+    
+    console.log('📤 Enviando datos:', datos);
+    console.log('🔧 Modo:', esEdicion ? 'EDICIÓN' : 'CREACIÓN');
+    
+    const btnCrear = document.querySelector('#modalCrearCombo .btn-warning');
+    const textoOriginal = btnCrear.innerHTML;
+    btnCrear.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${esEdicion ? 'Actualizando' : 'Creando'}...`;
+    btnCrear.disabled = true;
+    
+    // ✅ USAR SIEMPRE EL MISMO ENDPOINT PERO CON ID EN LOS DATOS
+    const url = '/api/crear_combo';
+    
+    fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(datos)
+    })
+    .then(response => response.json())
+    .then(result => {
+        console.log('📥 Respuesta del servidor:', result);
+        
+        if (result.success) {
+            alert(`✅ Oferta ${esEdicion ? 'actualizada' : 'creada'} exitosamente: ${datos.codigo_combo}`);
+            
+            const modal = bootstrap.Modal.getInstance(document.getElementById('modalCrearCombo'));
+            modal.hide();
+            
+            // Recargar página para mostrar cambios
+            window.location.reload();
+            
+        } else {
+            alert(`❌ Error al ${esEdicion ? 'actualizar' : 'crear'} oferta: ${result.error}`);
+        }
+    })
+    .catch(error => {
+        console.error('❌ Error:', error);
+        alert(`❌ Error de conexión al ${esEdicion ? 'actualizar' : 'crear'} la oferta`);
+    })
+    .finally(() => {
+        btnCrear.innerHTML = textoOriginal;
+        btnCrear.disabled = false;
+    });
+}
+
+
+function editarCombo(comboId) {
+   console.log(`✏️ Editando combo ID: ${comboId}`);
+   
+   fetch(`/api/producto_detalle/${comboId}`)
+       .then(response => response.json())
+       .then(data => {
+           if (data.error) {
+               alert('Error: ' + data.error);
+               return;
+           }
+           
+           if (!data.es_combo) {
+               alert('Este producto no es un combo');
+               return;
+           }
+           
+           // Cargar datos básicos
+           document.getElementById('combo_id_edit').value = comboId;
+           document.getElementById('cantidad_combo').value = data.cantidad_combo;
+           document.getElementById('codigo_combo').value = data.codigo;
+           document.getElementById('nombre_combo').value = data.nombre;
+           document.getElementById('descripcion_combo').value = data.descripcion || '';
+           
+           // NUEVO: Cargar producto base en el sistema de búsqueda
+           if (data.producto_base) {
+               const inputBusqueda = document.getElementById('buscar_producto_base');
+               const hiddenInput = document.getElementById('producto_base_combo');
+               
+               inputBusqueda.value = `${data.producto_base.codigo} - ${data.producto_base.nombre}`;
+               inputBusqueda.classList.add('producto-seleccionado');
+               hiddenInput.value = data.producto_base_id;
+               
+               // Actualizar info del producto base
+               actualizarInfoProductoBase(
+                   data.producto_base.id,
+                   data.producto_base.codigo,
+                   data.producto_base.nombre,
+                   data.producto_base.precio
+               );
+           }
+           
+           // Calcular precio normal y cargar precio de oferta
+           const precioNormal = data.precio_unitario_base * data.cantidad_combo;
+           document.getElementById('precio_normal_combo').value = precioNormal.toFixed(2);
+           document.getElementById('precio_combo').value = data.precio;
+           
+           calcularDescuento();
+           
+           // Cambiar título del modal
+           document.getElementById('tituloModalCombo').innerHTML = '<i class="fas fa-edit"></i> Editar Oferta/Combo';
+           document.getElementById('btnComboTexto').textContent = 'Actualizar Oferta';
+           
+           // Mostrar modal e inicializar búsqueda
+           const modal = new bootstrap.Modal(document.getElementById('modalCrearCombo'));
+           modal.show();
+           
+           setTimeout(() => {
+               inicializarBusquedaProductos();
+           }, 100);
+       })
+       .catch(error => {
+           console.error('Error:', error);
+           alert('Error al cargar los datos del combo');
+       });
+}
+
+
+function toggleCombo(id) {
+    if (confirm('¿Cambiar el estado del combo?')) {
+        fetch(`/toggle_producto/${id}`, {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(data.message);
+                window.location.reload();
+            } else {
+                alert('Error: ' + (data.error || 'Error desconocido'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error de conexión al cambiar estado del combo');
+        });
+    }
+}
+
+function duplicarCombo(id) {
+    if (confirm('¿Duplicar este combo?')) {
+        fetch(`/api/duplicar_combo/${id}`, {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(`✅ Combo duplicado exitosamente: ${data.nuevo_codigo}`);
+                window.location.reload();
+            } else {
+                alert('Error: ' + (data.error || 'Error desconocido'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error de conexión al duplicar combo');
+        });
+    }
+}
+
+function ajustarStock(id) {
+    // Primero obtener información del combo
+    fetch(`/api/producto_detalle/${id}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert('Error: ' + data.error);
+                return;
+            }
+            
+            stockActual = data.stock;
+            
+            document.getElementById('stockComboId').value = id;
+            document.getElementById('infoComboStock').innerHTML = `
+                <div class="alert alert-info">
+                    <strong>Combo:</strong> ${data.codigo} - ${data.nombre}<br>
+                    <strong>Stock actual:</strong> <span class="badge bg-primary">${data.stock} unidades</span><br>
+                    <strong>Producto base:</strong> ${data.producto_base ? data.producto_base.nombre : 'Sin base'}
+                </div>
+            `;
+            
+            // Limpiar formulario
+            document.getElementById('formStock').reset();
+            document.getElementById('tipoMovimiento').value = 'entrada';
+            document.getElementById('cantidadStock').min = '1';
+            document.getElementById('ayudaCantidad').textContent = 'Ingrese la cantidad a agregar';
+            
+            // Mostrar modal
+            new bootstrap.Modal(document.getElementById('modalStock')).show();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error al cargar información del combo');
+        });
+}
+
+function guardarStock() {
+    const form = document.getElementById('formStock');
+    
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+    
+    const formData = {
+        producto_id: document.getElementById('stockComboId').value,
+        tipo_movimiento: document.getElementById('tipoMovimiento').value,
+        cantidad: parseInt(document.getElementById('cantidadStock').value),
+        motivo: document.getElementById('motivo').value.trim()
+    };
+    
+    // Validaciones adicionales
+    if (formData.cantidad <= 0 && formData.tipo_movimiento !== 'ajuste') {
+        alert('La cantidad debe ser mayor a 0');
+        return;
+    }
+    
+    if (formData.tipo_movimiento === 'ajuste' && formData.cantidad < 0) {
+        alert('La cantidad para ajuste no puede ser negativa');
+        return;
+    }
+    
+    // Mostrar indicador de carga
+    const btnGuardar = document.querySelector('#modalStock .btn-info');
+    const textoOriginal = btnGuardar.innerHTML;
+    btnGuardar.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Procesando...';
+    btnGuardar.disabled = true;
+    
+    // Enviar datos al servidor
+    fetch('/ajustar_stock', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(`${data.message}\n\nStock anterior: ${data.stock_anterior}\nStock nuevo: ${data.stock_nuevo}`);
+            
+            // Cerrar modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('modalStock'));
+            modal.hide();
+            
+            // Recargar la página para mostrar los cambios
+            window.location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Error desconocido'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error de conexión al ajustar stock');
+    })
+    .finally(() => {
+        // Restaurar botón
+        btnGuardar.innerHTML = textoOriginal;
+        btnGuardar.disabled = false;
+    });
+}
+
+// ===== FUNCIONES DE FILTRADO =====
+
+function aplicarFiltrosCombos() {
+    const buscar = document.getElementById('buscarCombo').value.trim();
+    const estado = document.getElementById('filtroEstado').value;
+    const descuento = document.getElementById('filtroDescuento').value;
+    
+    console.log('🔍 Aplicando filtros combos:');
+    console.log('   Buscar:', buscar);
+    console.log('   Estado:', estado);
+    console.log('   Descuento:', descuento);
+    
+    // Construir URL con parámetros
+    const params = new URLSearchParams();
+    if (buscar) params.append('buscar', buscar);
+    if (estado) params.append('estado', estado);
+    if (descuento) params.append('descuento', descuento);
+    
+    // ✅ IMPORTANTE: Siempre agregar el filtro solo_combos=true
+    params.append('solo_combos', 'true');
+    
+    console.log('📤 URL de búsqueda:', `/buscar_productos_admin?${params.toString()}`);
+    
+    // Mostrar indicador de carga
+    const tbody = document.querySelector('#tablaCombos tbody');
+    tbody.innerHTML = `
+        <tr>
+            <td colspan="11" class="text-center py-4">
+                <i class="fas fa-spinner fa-spin fa-2x"></i><br>
+                <span class="text-muted">Buscando combos...</span>
+            </td>
+        </tr>
+    `;
+    
+    fetch(`/buscar_productos_admin?${params.toString()}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('📥 Respuesta recibida:', data);
+            
+            if (data.success) {
+                actualizarTablaCombos(data.productos);
+                console.log(`✅ Filtros aplicados: ${data.total} combos encontrados`);
+            } else {
+                console.error('❌ Error en respuesta:', data.error);
+                alert('Error en la búsqueda: ' + (data.error || 'Error desconocido'));
+                
+                // Mostrar mensaje de error en la tabla
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="11" class="text-center text-danger py-4">
+                            <i class="fas fa-exclamation-triangle fa-2x mb-2"></i><br>
+                            Error en la búsqueda: ${data.error || 'Error desconocido'}
+                        </td>
+                    </tr>
+                `;
+            }
+        })
+        .catch(error => {
+            console.error('❌ Error de conexión:', error);
+            alert('Error de conexión en la búsqueda: ' + error.message);
+            
+            // Mostrar mensaje de error en la tabla
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="11" class="text-center text-danger py-4">
+                        <i class="fas fa-wifi fa-2x mb-2"></i><br>
+                        Error de conexión: ${error.message}
+                    </td>
+                </tr>
+            `;
+        });
+}
+
+
+function limpiarFiltrosCombos() {
+    console.log('🧹 Limpiando filtros');
+    
+    document.getElementById('buscarCombo').value = '';
+    document.getElementById('filtroEstado').value = '';
+    document.getElementById('filtroDescuento').value = '';
+    
+    // Aplicar filtros vacíos (mostrará todos los combos)
+    aplicarFiltrosCombos();
+}
+
+function actualizarTablaCombos(combos) {
+    const tbody = document.querySelector('#tablaCombos tbody');
+    
+    console.log(`📊 Actualizando tabla con ${combos.length} combos`);
+    
+    if (combos.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="11" class="text-center text-muted py-4">
+                    <i class="fas fa-search fa-2x mb-2"></i><br>
+                    No se encontraron combos con los criterios especificados
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    tbody.innerHTML = combos.map(combo => {
+        // Guardar el ID para posible uso en toggleCombo desde eliminar
+        window.lastComboId = combo.id;
+        
+        const stockBadge = getStockBadge(combo.stock);
+        const estadoBadge = combo.activo ? 
+            '<span class="badge bg-success">Activo</span>' : 
+            '<span class="badge bg-secondary">Inactivo</span>';
+        
+        // Calcular descuento y ahorro
+        let descuentoHtml = '<span class="text-muted">-</span>';
+        let ahorroHtml = '<span class="text-muted">-</span>';
+        let precioNormalHtml = '<span class="text-muted">-</span>';
+        
+        if (combo.producto_base && combo.cantidad_combo) {
+            const precioNormal = combo.producto_base.precio * combo.cantidad_combo;
+            const descuento = ((precioNormal - combo.precio) / precioNormal * 100);
+            const ahorro = precioNormal - combo.precio;
+            
+            let badgeClass = 'bg-secondary';
+            if (descuento > 30) badgeClass = 'bg-danger';
+            else if (descuento > 15) badgeClass = 'bg-warning text-dark';
+            
+            descuentoHtml = `<span class="badge ${badgeClass}">-${descuento.toFixed(1)}%</span>`;
+            ahorroHtml = `<span class="text-success"><strong>$${ahorro.toFixed(0)}</strong></span>`;
+            precioNormalHtml = `<span class="text-muted">$${precioNormal.toFixed(2)}</span>`;
+        }
+        
+        return `
+            <tr>
+                <td><code>${combo.codigo}</code></td>
+                <td>
+                    <strong>${combo.nombre}</strong>
+                    <br><span class="badge bg-warning text-dark">OFERTA</span>
+                    ${combo.descripcion ? 
+                        `<br><small class="text-muted">${combo.descripcion.substring(0, 50)}${combo.descripcion.length > 50 ? '...' : ''}</small>` : 
+                        ''
+                    }
+                </td>
+                <td>
+                    ${combo.producto_base ? 
+                        `<strong>${combo.producto_base.codigo}</strong><br>
+                         <small class="text-muted">${combo.producto_base.nombre}</small><br>
+                         <span class="badge bg-info">$${combo.producto_base.precio.toFixed(2)}</span>` :
+                        '<span class="text-muted">Sin base</span>'
+                    }
+                </td>
+                <td class="text-center">
+                    <span class="badge bg-info">${combo.cantidad_combo || 1}x</span>
+                </td>
+                <td class="text-end">${precioNormalHtml}</td>
+                <td class="text-end">
+                    <strong class="text-success">$${combo.precio.toFixed(2)}</strong>
+                </td>
+                <td class="text-center">${descuentoHtml}</td>
+                <td class="text-center">${ahorroHtml}</td>
+                <td class="text-center">${stockBadge}</td>
+                <td>${estadoBadge}</td>
+                <td>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-warning" onclick="editarCombo(${combo.id})" title="Editar">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-info" onclick="ajustarStock(${combo.id})" title="Ajustar Stock">
+                            <i class="fas fa-boxes"></i>
+                        </button>
+                        <button class="btn btn-${combo.activo ? 'danger' : 'success'}" onclick="toggleCombo(${combo.id})" title="${combo.activo ? 'Desactivar' : 'Activar'}">
+                            <i class="fas fa-power-off"></i>
+                        </button>
+                        <button class="btn btn-secondary" onclick="duplicarCombo(${combo.id})" title="Duplicar">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                        <button class="btn btn-outline-danger" onclick="eliminarCombo(${combo.id})" title="Eliminar Definitivamente">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+    
+    console.log('✅ Tabla actualizada correctamente con botón eliminar');
+}
+
+// Función auxiliar para obtener el badge de stock
+function getStockBadge(stock) {
+    if (stock <= 0) {
+        return `<span class="badge bg-danger">${stock}</span>`;
+    } else if (stock < 10) {
+        return `<span class="badge bg-warning text-dark">${stock}</span>`;
+    } else {
+        return `<span class="badge bg-success">${stock}</span>`;
+    }
+}
+
+// ===== EVENT LISTENERS =====
+
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Inicializando página de combos...');
+    
+       
+    // ✅ APLICAR FILTROS INICIAL PARA MOSTRAR SOLO COMBOS
+    console.log('🔄 Cargando combos iniciales...');
+    aplicarFiltrosCombos();
+    
+    // Cambiar ayuda según tipo de movimiento de stock
+    document.getElementById('tipoMovimiento').addEventListener('change', function() {
+        const tipo = this.value;
+        const cantidadInput = document.getElementById('cantidadStock');
+        const ayuda = document.getElementById('ayudaCantidad');
+        
+        switch(tipo) {
+            case 'entrada':
+                cantidadInput.min = '1';
+                ayuda.textContent = 'Ingrese la cantidad a agregar';
+                break;
+            case 'salida':
+                cantidadInput.min = '1';
+                ayuda.textContent = `Ingrese la cantidad a quitar (máximo: ${stockActual})`;
+                break;
+            case 'ajuste':
+                cantidadInput.min = '0';
+                ayuda.textContent = 'Ingrese la cantidad final que debe quedar';
+                break;
+        }
+    });
+    
+    // Búsqueda en tiempo real con debounce
+    const inputBuscar = document.getElementById('buscarCombo');
+    let timeoutBusqueda;
+    
+    inputBuscar.addEventListener('input', function() {
+        clearTimeout(timeoutBusqueda);
+        timeoutBusqueda = setTimeout(() => {
+            console.log('🔍 Búsqueda en tiempo real activada');
+            aplicarFiltrosCombos();
+        }, 500);
+    });
+    
+    // Aplicar filtros cuando cambien los selects
+    document.getElementById('filtroEstado').addEventListener('change', function() {
+        console.log('📊 Filtro estado cambiado:', this.value);
+        aplicarFiltrosCombos();
+    });
+    
+    document.getElementById('filtroDescuento').addEventListener('change', function() {
+        console.log('💰 Filtro descuento cambiado:', this.value);
+        aplicarFiltrosCombos();
+    });
+    
+    console.log('✅ Página de combos inicializada correctamente');
+});
+
+function eliminarCombo(comboId) {
+    console.log(`🗑️ Solicitando eliminación de combo ID: ${comboId}`);
+    
+    // Primero verificar si se puede eliminar
+    fetch(`/api/verificar_eliminacion_combo/${comboId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.puede_eliminar) {
+                // Es seguro eliminar - mostrar confirmación
+                mostrarConfirmacionEliminacion(comboId, data);
+            } else {
+                // No se puede eliminar - mostrar por qué
+                mostrarRazonNoEliminacion(data);
+            }
+        })
+        .catch(error => {
+            console.error('Error verificando eliminación:', error);
+            alert('Error al verificar si el combo puede eliminarse');
+        });
+}
+
+function mostrarConfirmacionEliminacion(comboId, data) {
+    const mensaje = `¿Estás seguro de que quieres ELIMINAR DEFINITIVAMENTE este combo?
+
+📦 Combo: ${data.codigo} - ${data.nombre}
+📊 Stock actual: ${data.stock}
+💡 Esta acción NO se puede deshacer
+
+Si solo quieres ocultarlo temporalmente, usa el botón "Desactivar" en su lugar.`;
+
+    if (confirm(mensaje)) {
+        ejecutarEliminacionCombo(comboId, data);
+    }
+}
+
+function mostrarRazonNoEliminacion(data) {
+    let mensaje = `❌ No se puede eliminar el combo "${data.codigo}":\n\n`;
+    
+    if (data.motivo === 'tiene_ventas') {
+        mensaje += `🛒 El combo tiene ${data.ventas_count} ventas registradas.\n`;
+        mensaje += `💡 Para preservar el historial de ventas, solo puedes DESACTIVARLO.\n\n`;
+        mensaje += `¿Quieres desactivar el combo en su lugar?`;
+        
+        if (confirm(mensaje)) {
+            // Si acepta, desactivar en lugar de eliminar
+            toggleCombo(data.id || parseInt(window.lastComboId));
+        }
+    } else if (data.motivo === 'facturas_pendientes') {
+        mensaje += `📄 El combo está en ${data.facturas_pendientes} facturas pendientes de autorización.\n`;
+        mensaje += `💡 Espera a que se procesen las facturas pendientes e intenta nuevamente.`;
+        alert(mensaje);
+    } else {
+        mensaje += `🤔 Motivo: ${data.mensaje || 'Motivo desconocido'}`;
+        alert(mensaje);
+    }
+}
+
+function ejecutarEliminacionCombo(comboId, data) {
+    console.log(`🗑️ Ejecutando eliminación de combo ${data.codigo}...`);
+    
+    fetch(`/api/eliminar_combo/${comboId}`, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            alert(`✅ ${result.message}`);
+            
+            // Recargar la página para mostrar cambios
+            window.location.reload();
+        } else {
+            console.error('Error del servidor:', result.error);
+            
+            // Si el error es que tiene ventas, ofrecer desactivar
+            if (result.motivo === 'tiene_ventas') {
+                const mensaje = `${result.error}\n\n¿Quieres desactivar el combo en su lugar?`;
+                if (confirm(mensaje)) {
+                    toggleCombo(comboId);
+                }
+            } else {
+                alert(`❌ ${result.error}`);
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error de conexión:', error);
+        alert('❌ Error de conexión al eliminar combo');
+    });
+}
+
+
+</script>
+{% endblock %}
