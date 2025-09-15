@@ -92,12 +92,19 @@
 {% endblock %}
 
 {% block content %}
+
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
     <h1 class="h2"><i class="fas fa-tags"></i> Gestión de Combos y Ofertas</h1>
-    <button class="btn btn-success" onclick="mostrarModalCrearCombo()">
-        <i class="fas fa-plus"></i> Crear Nueva Oferta
-    </button>
+    <div class="btn-group">
+        <button class="btn btn-info me-2" onclick="mostrarAyudaCombos()">
+            <i class="fas fa-question-circle"></i> ¿Cómo funcionan?
+        </button>
+        <button class="btn btn-success" onclick="mostrarModalCrearCombo()">
+            <i class="fas fa-plus"></i> Crear Nueva Oferta
+        </button>
+    </div>
 </div>
+
 
 <!-- Estadísticas rápidas -->
 <!-- Estadísticas rápidas CORREGIDAS - Compatible Jinja2 - VERSIÓN SEGURA -->
@@ -573,6 +580,213 @@
         </div>
     </div>
 </div>
+
+
+<!-- Modal de Ayuda/Explicación de Combos -->
+<div class="modal fade" id="modalAyudaCombos" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-lightbulb"></i> ¿Cómo Funcionan los Combos y Ofertas?
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Introducción -->
+                <div class="alert alert-info">
+                    <h6><i class="fas fa-info-circle"></i> ¿Qué es un Combo?</h6>
+                    <p class="mb-0">Un combo es una <strong>oferta especial</strong> que permite vender <strong>mayor cantidad</strong> de un producto a un <strong>precio con descuento</strong>. Es ideal para promociones, ofertas por volumen o paquetes especiales.</p>
+                </div>
+
+                <!-- Proceso paso a paso -->
+                <h6><i class="fas fa-list-ol"></i> Proceso de Creación (Paso a Paso)</h6>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card mb-3">
+                            <div class="card-header bg-light">
+                                <strong>1. Seleccionar Producto Base</strong>
+                            </div>
+                            <div class="card-body">
+                                <ul class="mb-0">
+                                    <li>Busca el producto que será la base</li>
+                                    <li>Solo productos activos y NO combos</li>
+                                    <li>Ejemplo: "Arroz 1kg - $500"</li>
+                                </ul>
+                            </div>
+                        </div>
+                        
+                        <div class="card mb-3">
+                            <div class="card-header bg-light">
+                                <strong>2. Definir Cantidad del Combo</strong>
+                            </div>
+                            <div class="card-body">
+                                <ul class="mb-0">
+                                    <li>Cantidad que incluirá la oferta</li>
+                                    <li>Acepta decimales (ej: 2.5kg)</li>
+                                    <li>Ejemplo: 3 unidades</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="card mb-3">
+                            <div class="card-header bg-light">
+                                <strong>3. Generación Automática</strong>
+                            </div>
+                            <div class="card-body">
+                                <ul class="mb-0">
+                                    <li><strong>Código:</strong> ARR001-3UN</li>
+                                    <li><strong>Nombre:</strong> 3 x Arroz 1kg (Oferta)</li>
+                                    <li><strong>Precio Normal:</strong> $1,500</li>
+                                </ul>
+                            </div>
+                        </div>
+                        
+                        <div class="card mb-3">
+                            <div class="card-header bg-light">
+                                <strong>4. Definir Precio de Oferta</strong>
+                            </div>
+                            <div class="card-body">
+                                <ul class="mb-0">
+                                    <li>Precio especial (menor al normal)</li>
+                                    <li>Ejemplo: $1,200</li>
+                                    <li><strong>Ahorro:</strong> $300 (20% descuento)</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Ejemplos prácticos -->
+                <h6><i class="fas fa-examples"></i> Ejemplos Prácticos</h6>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead class="table-primary">
+                            <tr>
+                                <th>Producto Base</th>
+                                <th>Precio Base</th>
+                                <th>Combo</th>
+                                <th>Precio Normal</th>
+                                <th>Precio Oferta</th>
+                                <th>Ahorro</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Detergente 1L</td>
+                                <td>$300</td>
+                                <td>3 x Detergente 1L (Oferta)</td>
+                                <td>$900</td>
+                                <td>$750</td>
+                                <td class="text-success"><strong>$150 (16.7%)</strong></td>
+                            </tr>
+                            <tr>
+                                <td>Azúcar 1kg</td>
+                                <td>$200</td>
+                                <td>2.5 x Azúcar 1kg (Oferta)</td>
+                                <td>$500</td>
+                                <td>$450</td>
+                                <td class="text-success"><strong>$50 (10%)</strong></td>
+                            </tr>
+                            <tr>
+                                <td>Shampoo 400ml</td>
+                                <td>$800</td>
+                                <td>2 x Shampoo 400ml (Oferta)</td>
+                                <td>$1,600</td>
+                                <td>$1,200</td>
+                                <td class="text-success"><strong>$400 (25%)</strong></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Características importantes -->
+                <h6><i class="fas fa-star"></i> Características Importantes</h6>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="alert alert-success">
+                            <h6><i class="fas fa-check-circle"></i> Ventajas</h6>
+                            <ul class="mb-0">
+                                <li><strong>Automatización:</strong> Códigos y nombres automáticos</li>
+                                <li><strong>Stock Independiente:</strong> Control separado del producto base</li>
+                                <li><strong>Flexibilidad:</strong> Cantidades decimales permitidas</li>
+                                <li><strong>Validaciones:</strong> Impide ofertas sin descuento real</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="alert alert-warning">
+                            <h6><i class="fas fa-exclamation-triangle"></i> Consideraciones</h6>
+                            <ul class="mb-0">
+                                <li><strong>Stock:</strong> Gestión independiente requerida</li>
+                                <li><strong>Precio:</strong> Debe ser menor al precio normal</li>
+                                <li><strong>Eliminación:</strong> Solo si no tiene ventas</li>
+                                <li><strong>Base:</strong> El producto base debe existir y estar activo</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gestión de Stock -->
+                <h6><i class="fas fa-boxes"></i> Gestión de Stock</h6>
+                <div class="alert alert-info">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <strong><i class="fas fa-plus text-success"></i> Entrada:</strong><br>
+                            <small>Agregar stock (compras, devoluciones)</small>
+                        </div>
+                        <div class="col-md-4">
+                            <strong><i class="fas fa-minus text-warning"></i> Salida:</strong><br>
+                            <small>Quitar stock (mermas, defectos)</small>
+                        </div>
+                        <div class="col-md-4">
+                            <strong><i class="fas fa-edit text-primary"></i> Ajuste:</strong><br>
+                            <small>Establecer cantidad exacta (inventario)</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Código de colores -->
+                <h6><i class="fas fa-palette"></i> Códigos de Estado</h6>
+                <div class="d-flex justify-content-around text-center">
+                    <div>
+                        <span class="badge bg-danger fs-6">0</span><br>
+                        <small>Sin Stock</small>
+                    </div>
+                    <div>
+                        <span class="badge bg-warning text-dark fs-6">5</span><br>
+                        <small>Stock Bajo</small>
+                    </div>
+                    <div>
+                        <span class="badge bg-success fs-6">25</span><br>
+                        <small>Stock Bueno</small>
+                    </div>
+                    <div>
+                        <span class="badge bg-success">Activo</span><br>
+                        <small>Disponible</small>
+                    </div>
+                    <div>
+                        <span class="badge bg-secondary">Inactivo</span><br>
+                        <small>Oculto</small>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Cerrar
+                </button>
+                <button type="button" class="btn btn-success" data-bs-dismiss="modal" onclick="mostrarModalCrearCombo()">
+                    <i class="fas fa-plus"></i> Crear Mi Primera Oferta
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
 {% endblock %}
 
 {% block scripts %}
@@ -1693,6 +1907,12 @@ function ejecutarEliminacionCombo(comboId, data) {
     });
 }
 
+// Función para mostrar el modal de ayuda
+function mostrarAyudaCombos() {
+    console.log('📚 Mostrando ayuda de combos...');
+    const modal = new bootstrap.Modal(document.getElementById('modalAyudaCombos'));
+    modal.show();
+}
 
 </script>
 {% endblock %}
