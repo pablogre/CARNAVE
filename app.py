@@ -3,6 +3,7 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, flash
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import Numeric, or_, and_, func, desc, asc, case  
+from sqlalchemy.orm import joinedload
 #from sqlalchemy import Numeric, or_, and_  # ← IMPORTAR AQUÍ
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
@@ -26,13 +27,15 @@ import json
 import subprocess
 import MySQLdb.cursors
 from estadisticas import init_estadisticas
-
+from caja import init_caja_system
 # ================ FIX SSL COMPATIBLE PARA AFIP ================
 import ssl
 import urllib3
 from urllib3.util import ssl_
 from requests.adapters import HTTPAdapter
 from requests import Session
+
+
 
 
 def configurar_ssl_afip():
@@ -212,10 +215,27 @@ class Producto(db.Model):
     descuento_porcentaje = db.Column(Numeric(5, 2), default=0.00)
     acceso_rapido = db.Column(db.Boolean, default=False)  # ← AGREGAR ESTA LÍNEA
     orden_acceso_rapido = db.Column(db.Integer, default=0)  # ← Y ESTA LÍNEA TAMBIÉN
+    producto_base_2_id = db.Column(db.Integer, db.ForeignKey('producto.id'), nullable=True)
+    cantidad_combo_2 = db.Column(Numeric(8, 3), default=0.000)
+    producto_base_3_id = db.Column(db.Integer, db.ForeignKey('producto.id'), nullable=True)
+    cantidad_combo_3 = db.Column(Numeric(8, 3), default=0.000)
+
 
     # ✅ AGREGAR ESTA RELACIÓN:
-    producto_base = db.relationship('Producto', remote_side=[id], backref='combos_derivados')
-    
+    producto_base = db.relationship('Producto', 
+                                    foreign_keys=[producto_base_id], 
+                                    remote_side=[id], 
+                                    backref='combos_derivados')
+
+    # AGREGAR ESTAS NUEVAS RELACIONES:
+    producto_base_2 = db.relationship('Producto', 
+                                    foreign_keys=[producto_base_2_id], 
+                                    remote_side=[id])
+
+    producto_base_3 = db.relationship('Producto', 
+                                    foreign_keys=[producto_base_3_id], 
+                                    remote_side=[id])
+        
     def __repr__(self):
         return f'<Producto {self.codigo}: {self.nombre}>'
     
@@ -594,7 +614,8 @@ class Gasto(db.Model):
     fecha_modificacion = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
     activo = db.Column(db.Boolean, default=True)
     usuario_id = db.Column(db.Integer, db.ForeignKey('usuario.id'))  # Usuario que registró el gasto
-    
+    caja_id = db.Column(db.Integer, db.ForeignKey('cajas.id'), nullable=True) 
+
     # Relación con Usuario
     usuario = db.relationship('Usuario', backref=db.backref('gastos', lazy=True))
     
@@ -1530,8 +1551,11 @@ afip_monitor = AFIPStatusMonitor(ARCA_CONFIG)
 estadisticas_bp = init_estadisticas(db, Factura, DetalleFactura, Producto)
 app.register_blueprint(estadisticas_bp)
 
+# INICIALIZAR SISTEMA DE CAJA
+caja_bp = init_caja_system(db, Factura, DetalleFactura, Producto, Usuario, MedioPago, Gasto)
+app.register_blueprint(caja_bp)
 
-# Rutas de la aplicación
+# RUTAS DE LA APLICACION ***  RUTAS DE LA APLICACION *** RUTAS DE LA APLICACION *** RUTAS DE LA APLICACION 
 @app.route('/')
 def index():
     if 'user_id' not in session:
@@ -1592,6 +1616,15 @@ def productos():
 def combos():
     # Obtener solo productos que son combos
     combos = Producto.query.filter_by(es_combo=True).all()
+    combos = db.session.query(Producto)\
+        .options(
+            joinedload(Producto.producto_base),
+            joinedload(Producto.producto_base_2),    # NUEVO
+            joinedload(Producto.producto_base_3)     # NUEVO
+        )\
+        .filter(Producto.es_combo == True)\
+        .all()
+
     return render_template('combos.html', combos=combos)
 
 @app.route('/clientes')
@@ -1773,9 +1806,10 @@ def buscar_clientes():
 # ==================== RUTAS DE PRODUCTOS ====================
 
 # 1. ACTUALIZAR LA RUTA /api/producto_detalle/<int:producto_id>
+# RUTA CORREGIDA PARA COMBOS MULTI-PRODUCTO
 @app.route('/api/producto_detalle/<int:producto_id>')
 def obtener_producto_detalle(producto_id):
-    """Obtener datos completos de un producto para edición"""
+    """Obtener datos completos de un producto para edición - CORREGIDO PARA MULTI-PRODUCTO"""
     if 'user_id' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     
@@ -1804,38 +1838,118 @@ def obtener_producto_detalle(producto_id):
             'iva': float(producto.iva),
             'activo': producto.activo,
             
-            # ✅ CAMPOS DE COMBO AGREGADOS
+            # CAMPOS DE COMBO BÁSICOS
             'es_combo': getattr(producto, 'es_combo', False),
             'cantidad_combo': getattr(producto, 'cantidad_combo', None),
-            'producto_base_id': getattr(producto, 'producto_base_id', None)
+            'producto_base_id': getattr(producto, 'producto_base_id', None),
+            
+            # NUEVOS CAMPOS PARA MULTI-PRODUCTO
+            'producto_base_2_id': getattr(producto, 'producto_base_2_id', None),
+            'cantidad_combo_2': getattr(producto, 'cantidad_combo_2', None),
+            'producto_base_3_id': getattr(producto, 'producto_base_3_id', None),
+            'cantidad_combo_3': getattr(producto, 'cantidad_combo_3', None)
         }
         
-        # ✅ SI ES UN COMBO, AGREGAR INFORMACIÓN DEL PRODUCTO BASE
-        if resultado['es_combo'] and resultado['producto_base_id']:
-            try:
-                producto_base = Producto.query.get(resultado['producto_base_id'])
-                if producto_base:
-                    resultado['producto_base'] = {
-                        'id': producto_base.id,
-                        'codigo': producto_base.codigo,
-                        'nombre': producto_base.nombre,
-                        'precio': float(producto_base.precio)
-                    }
-                    # Precio unitario del producto base para cálculos
-                    resultado['precio_unitario_base'] = float(producto_base.precio)
-                else:
+        # SI ES UN COMBO, CARGAR INFORMACIÓN DE TODOS LOS PRODUCTOS BASE
+        if resultado['es_combo']:
+            print(f"🔍 Cargando detalles de combo multi-producto: {producto.codigo}")
+            
+            # PRODUCTO BASE 1 (obligatorio)
+            if resultado['producto_base_id']:
+                try:
+                    producto_base = Producto.query.get(resultado['producto_base_id'])
+                    if producto_base:
+                        resultado['producto_base'] = {
+                            'id': producto_base.id,
+                            'codigo': producto_base.codigo,
+                            'nombre': producto_base.nombre,
+                            'precio': float(producto_base.precio)
+                        }
+                        resultado['precio_unitario_base'] = float(producto_base.precio)
+                        print(f"   ✅ Producto base 1: {producto_base.codigo}")
+                    else:
+                        resultado['producto_base'] = None
+                        resultado['precio_unitario_base'] = 0.0
+                        print(f"   ❌ Producto base 1 no encontrado: ID {resultado['producto_base_id']}")
+                except Exception as e:
+                    print(f"   ⚠️ Error cargando producto base 1: {str(e)}")
                     resultado['producto_base'] = None
                     resultado['precio_unitario_base'] = 0.0
-            except Exception as e:
-                print(f"Error obteniendo producto base: {str(e)}")
-                resultado['producto_base'] = None
-                resultado['precio_unitario_base'] = 0.0
+            
+            # PRODUCTO BASE 2 (opcional)
+            if resultado['producto_base_2_id']:
+                try:
+                    producto_base_2 = Producto.query.get(resultado['producto_base_2_id'])
+                    if producto_base_2:
+                        resultado['producto_base_2'] = {
+                            'id': producto_base_2.id,
+                            'codigo': producto_base_2.codigo,
+                            'nombre': producto_base_2.nombre,
+                            'precio': float(producto_base_2.precio)
+                        }
+                        print(f"   ✅ Producto base 2: {producto_base_2.codigo}")
+                    else:
+                        resultado['producto_base_2'] = None
+                        print(f"   ❌ Producto base 2 no encontrado: ID {resultado['producto_base_2_id']}")
+                except Exception as e:
+                    print(f"   ⚠️ Error cargando producto base 2: {str(e)}")
+                    resultado['producto_base_2'] = None
+            else:
+                resultado['producto_base_2'] = None
+            
+            # PRODUCTO BASE 3 (opcional)
+            if resultado['producto_base_3_id']:
+                try:
+                    producto_base_3 = Producto.query.get(resultado['producto_base_3_id'])
+                    if producto_base_3:
+                        resultado['producto_base_3'] = {
+                            'id': producto_base_3.id,
+                            'codigo': producto_base_3.codigo,
+                            'nombre': producto_base_3.nombre,
+                            'precio': float(producto_base_3.precio)
+                        }
+                        print(f"   ✅ Producto base 3: {producto_base_3.codigo}")
+                    else:
+                        resultado['producto_base_3'] = None
+                        print(f"   ❌ Producto base 3 no encontrado: ID {resultado['producto_base_3_id']}")
+                except Exception as e:
+                    print(f"   ⚠️ Error cargando producto base 3: {str(e)}")
+                    resultado['producto_base_3'] = None
+            else:
+                resultado['producto_base_3'] = None
+            
+            # CALCULAR PRECIO NORMAL TOTAL (TODOS LOS PRODUCTOS)
+            precio_normal_total = 0
+            
+            # Producto 1
+            if resultado.get('producto_base') and resultado.get('cantidad_combo'):
+                precio_normal_total += resultado['producto_base']['precio'] * float(resultado['cantidad_combo'])
+            
+            # Producto 2
+            if resultado.get('producto_base_2') and resultado.get('cantidad_combo_2'):
+                precio_normal_total += resultado['producto_base_2']['precio'] * float(resultado['cantidad_combo_2'])
+            
+            # Producto 3
+            if resultado.get('producto_base_3') and resultado.get('cantidad_combo_3'):
+                precio_normal_total += resultado['producto_base_3']['precio'] * float(resultado['cantidad_combo_3'])
+            
+            # AGREGAR INFORMACIÓN CALCULADA
+            resultado['precio_normal_total'] = round(precio_normal_total, 2)
+            resultado['ahorro_total'] = round(precio_normal_total - float(producto.precio), 2)
+            resultado['descuento_porcentaje_calculado'] = round(
+                ((precio_normal_total - float(producto.precio)) / precio_normal_total * 100), 1
+            ) if precio_normal_total > 0 else 0
+            
+            print(f"   💰 Precio normal total: ${precio_normal_total:.2f}")
+            print(f"   💰 Precio combo: ${float(producto.precio):.2f}")
+            print(f"   💰 Ahorro: ${resultado['ahorro_total']:.2f} ({resultado['descuento_porcentaje_calculado']:.1f}%)")
         
         return jsonify(resultado)
         
     except Exception as e:
-        print(f"Error en obtener_producto_detalle: {str(e)}")
+        print(f"❌ Error en obtener_producto_detalle: {str(e)}")
         return jsonify({'error': f'Error al obtener producto: {str(e)}'}), 500
+
 
 # 2. ACTUALIZAR LA RUTA /guardar_producto
 @app.route('/guardar_producto', methods=['POST'])
@@ -2266,122 +2380,137 @@ def api_productos_con_ofertas():
 
 @app.route('/api/crear_combo', methods=['POST'])
 def crear_combo():
-    """Crear un nuevo combo/oferta basado en un producto existente o editarlo"""
-    if 'user_id' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
-    
     try:
-        data = request.json
+        datos = request.get_json()
         
-        # ✅ DETECTAR SI ES EDICIÓN
-        combo_id = data.get('id')
-        es_edicion = combo_id is not None
-        
-        if es_edicion:
-            print(f"🔧 EDITANDO combo ID: {combo_id}")
-            combo = Producto.query.get_or_404(combo_id)
-            if not combo.es_combo:
-                return jsonify({'error': 'El producto no es un combo'}), 400
+        # Validación básica
+        if not datos.get('producto_base_id'):
+            return jsonify({'success': False, 'error': 'Producto base 1 es requerido'})
+            
+        # Si es edición, buscar combo existente
+        if datos.get('id'):
+            combo = Producto.query.get(datos['id'])
+            if not combo:
+                return jsonify({'success': False, 'error': 'Combo no encontrado'})
         else:
-            print("🆕 CREANDO nuevo combo")
-            combo = None
+            combo = Producto()
+            combo.es_combo = True
+            combo.activo = True
+            combo.stock = 0
         
-        # Validar datos
-        producto_base_id = data.get('producto_base_id')
-        cantidad_combo = float(data.get('cantidad_combo', 1))
-        precio_combo = float(data.get('precio_combo', 0))
-        nombre_combo = data.get('nombre_combo', '').strip()
+        # Datos básicos del combo
+        combo.producto_base_id = datos['producto_base_id']
+        combo.cantidad_combo = datos['cantidad_combo']
+        combo.precio = datos['precio_combo']
         
-        if not producto_base_id:
-            return jsonify({'error': 'Producto base requerido'}), 400
-        
-        if cantidad_combo <= 0:
-            return jsonify({'error': 'La cantidad debe ser mayor a 0'}), 400
-        
-        if precio_combo <= 0:
-            return jsonify({'error': 'El precio debe ser mayor a 0'}), 400
-        
-        # Obtener producto base
-        producto_base = Producto.query.get_or_404(producto_base_id)
-        
-        # Calcular precio normal y descuento
-        precio_normal = float(producto_base.precio) * cantidad_combo
-        descuento_monto = precio_normal - precio_combo
-        descuento_porcentaje = (descuento_monto / precio_normal) * 100 if precio_normal > 0 else 0
+        # NUEVOS CAMPOS: Productos adicionales
+        combo.producto_base_2_id = datos.get('producto_base_2_id')
+        combo.cantidad_combo_2 = datos.get('cantidad_combo_2', 0)
+        combo.producto_base_3_id = datos.get('producto_base_3_id')
+        combo.cantidad_combo_3 = datos.get('cantidad_combo_3', 0)
         
         # Generar código automático si no se proporciona
-        codigo_combo = data.get('codigo_combo', '').strip()
-        if not codigo_combo:
-            cantidad_str = f"{cantidad_combo:g}".replace('.', '')
-            codigo_combo = f"{producto_base.codigo}-{cantidad_str}UN"
-        
-        # ✅ VERIFICAR CÓDIGO DUPLICADO SOLO SI ES NUEVO O CAMBIÓ
-        if not es_edicion or (es_edicion and combo.codigo != codigo_combo):
-            if Producto.query.filter_by(codigo=codigo_combo).first():
-                return jsonify({'error': f'Ya existe un producto con el código {codigo_combo}'}), 400
-        
-        # Generar nombre automático si no se proporciona
-        if not nombre_combo:
-            cantidad_str = f"{cantidad_combo:g}"
-            nombre_combo = f"{cantidad_str} x {producto_base.nombre} (Oferta)"
-        
-        if es_edicion:
-            # ✅ ACTUALIZAR COMBO EXISTENTE
-            combo.codigo = codigo_combo
-            combo.nombre = nombre_combo
-            combo.descripcion = data.get('descripcion_combo', combo.descripcion)
-            combo.precio = Decimal(str(precio_combo))
-            combo.categoria = 'OFERTAS'
-            combo.iva = producto_base.iva
-            combo.costo = Decimal(str(float(producto_base.costo or 0) * cantidad_combo))
-            combo.stock = int(float(producto_base.stock) / cantidad_combo)
-            combo.producto_base_id = producto_base.id
-            combo.cantidad_combo = Decimal(str(cantidad_combo))
-            combo.precio_unitario_base = producto_base.precio
-            combo.descuento_porcentaje = Decimal(str(descuento_porcentaje))
-            
-            accion = "actualizado"
+        if not datos.get('codigo_combo'):
+            combo.codigo = generar_codigo_combo_multi(combo)
         else:
-            # ✅ CREAR NUEVO COMBO
-            combo = Producto(
-                codigo=codigo_combo,
-                nombre=nombre_combo,
-                descripcion=f"Oferta especial: {cantidad_combo:g} unidades de {producto_base.nombre}",
-                precio=Decimal(str(precio_combo)),
-                categoria='OFERTAS',
-                iva=producto_base.iva,
-                costo=Decimal(str(float(producto_base.costo or 0) * cantidad_combo)),
-                stock=int(float(producto_base.stock) / cantidad_combo),
-                es_combo=True,
-                producto_base_id=producto_base.id,
-                cantidad_combo=Decimal(str(cantidad_combo)),
-                precio_unitario_base=producto_base.precio,
-                descuento_porcentaje=Decimal(str(descuento_porcentaje))
-            )
+            combo.codigo = datos['codigo_combo']
             
-            db.session.add(combo)
-            accion = "creado"
+        # Generar nombre automático si no se proporciona
+        if not datos.get('nombre_combo'):
+            combo.nombre = generar_nombre_combo_multi(combo)
+        else:
+            combo.nombre = datos['nombre_combo']
+            
+        combo.descripcion = datos.get('descripcion_combo', '')
         
+        # Validar que el precio de oferta sea menor al precio normal
+        precio_normal_total = calcular_precio_normal_multi(combo)
+        if combo.precio >= precio_normal_total:
+            return jsonify({
+                'success': False, 
+                'error': 'El precio de oferta debe ser menor al precio normal'
+            })
+        
+        db.session.add(combo)
         db.session.commit()
         
-        print(f"✅ Combo {accion}: {codigo_combo}")
-        print(f"   Producto base: {producto_base.nombre}")
-        print(f"   Cantidad: {cantidad_combo}")
-        print(f"   Precio normal: ${precio_normal:.2f}")
-        print(f"   Precio combo: ${precio_combo:.2f}")
-        print(f"   Descuento: {descuento_porcentaje:.1f}% (${descuento_monto:.2f})")
-        
         return jsonify({
-            'success': True,
-            'message': f'Combo {accion} correctamente',
-            'combo': combo.to_dict()
+            'success': True, 
+            'message': 'Combo creado exitosamente',
+            'codigo': combo.codigo
         })
         
     except Exception as e:
         db.session.rollback()
-        print(f"Error en combo: {str(e)}")
-        return jsonify({'error': f'Error al procesar combo: {str(e)}'}), 500
+        return jsonify({'success': False, 'error': str(e)})
 
+def calcular_precio_normal_multi(combo):
+    """Calcular precio normal total del combo multi-producto"""
+    precio_total = 0
+    
+    # Producto 1 (obligatorio)
+    if combo.producto_base_id and combo.cantidad_combo:
+        producto1 = Producto.query.get(combo.producto_base_id)
+        if producto1:
+            precio_total += producto1.precio * combo.cantidad_combo
+    
+    # Producto 2 (opcional)
+    if combo.producto_base_2_id and combo.cantidad_combo_2:
+        producto2 = Producto.query.get(combo.producto_base_2_id)
+        if producto2:
+            precio_total += producto2.precio * combo.cantidad_combo_2
+    
+    # Producto 3 (opcional)
+    if combo.producto_base_3_id and combo.cantidad_combo_3:
+        producto3 = Producto.query.get(combo.producto_base_3_id)
+        if producto3:
+            precio_total += producto3.precio * combo.cantidad_combo_3
+    
+    return precio_total
+
+def generar_codigo_combo_multi(combo):
+    """Generar código automático para combo multi-producto"""
+    codigos = []
+    
+    if combo.producto_base_id:
+        producto1 = Producto.query.get(combo.producto_base_id)
+        if producto1:
+            codigos.append(producto1.codigo)
+    
+    if combo.producto_base_2_id:
+        producto2 = Producto.query.get(combo.producto_base_2_id)
+        if producto2:
+            codigos.append(producto2.codigo)
+    
+    if combo.producto_base_3_id:
+        producto3 = Producto.query.get(combo.producto_base_3_id)
+        if producto3:
+            codigos.append(producto3.codigo)
+    
+    return f"{'_'.join(codigos)}_COMBO"
+
+def generar_nombre_combo_multi(combo):
+    """Generar nombre automático para combo multi-producto"""
+    nombres = []
+    
+    if combo.producto_base_id and combo.cantidad_combo:
+        producto1 = Producto.query.get(combo.producto_base_id)
+        if producto1:
+            nombres.append(f"{combo.cantidad_combo}x {producto1.nombre}")
+    
+    if combo.producto_base_2_id and combo.cantidad_combo_2:
+        producto2 = Producto.query.get(combo.producto_base_2_id)
+        if producto2:
+            nombres.append(f"{combo.cantidad_combo_2}x {producto2.nombre}")
+    
+    if combo.producto_base_3_id and combo.cantidad_combo_3:
+        producto3 = Producto.query.get(combo.producto_base_3_id)
+        if producto3:
+            nombres.append(f"{combo.cantidad_combo_3}x {producto3.nombre}")
+    
+    return f"Pack: {' + '.join(nombres)} (Oferta)"
+
+#**************************************************************
 @app.route('/api/combos_producto/<int:producto_id>')
 def obtener_combos_producto(producto_id):
     """Obtener todos los combos de un producto base"""
@@ -5277,73 +5406,39 @@ def reporte_ventas_parcial():
 
 @app.route('/api/gastos', methods=['GET'])
 def obtener_gastos():
-    """Obtener gastos filtrados por fechas"""
-    if 'user_id' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
-        
     try:
-        fecha_desde = request.args.get('desde')
-        fecha_hasta = request.args.get('hasta')
+        fecha_desde = request.args.get('fecha_desde')
+        fecha_hasta = request.args.get('fecha_hasta')
         
-        # Validar parámetros
         if not fecha_desde or not fecha_hasta:
-            return jsonify({
-                'success': False,
-                'error': 'Debe proporcionar fecha_desde y fecha_hasta'
-            }), 400
+            return jsonify({'success': False, 'error': 'Fechas requeridas'})
         
-        # Validar formato de fechas
-        try:
-            fecha_desde_dt = datetime.strptime(fecha_desde, '%Y-%m-%d').date()
-            fecha_hasta_dt = datetime.strptime(fecha_hasta, '%Y-%m-%d').date()
-        except ValueError:
-            return jsonify({
-                'success': False,
-                'error': 'Formato de fecha inválido. Use YYYY-MM-DD'
-            }), 400
+        # AGREGA ESTA IMPORTACIÓN
+        from sqlalchemy import text
         
-        print(f"📋 Obteniendo gastos del {fecha_desde} al {fecha_hasta}")
+        query = """
+        SELECT g.*, 
+               c.estado as estado_caja,
+               CASE WHEN c.estado = 'cerrada' THEN 1 ELSE 0 END as caja_cerrada
+        FROM gastos g
+        LEFT JOIN cajas c ON g.caja_id = c.id
+        WHERE DATE(g.fecha) BETWEEN :fecha_desde AND :fecha_hasta
+        ORDER BY g.fecha DESC
+        """
         
-        # Consulta principal
-        gastos = Gasto.query.filter(
-            and_(
-                Gasto.fecha >= fecha_desde_dt,
-                Gasto.fecha <= fecha_hasta_dt,
-                Gasto.activo == True
-            )
-        ).order_by(Gasto.fecha.desc(), Gasto.fecha_creacion.desc()).all()
+        # CAMBIA ESTA PARTE
+        result = db.session.execute(text(query), {'fecha_desde': fecha_desde, 'fecha_hasta': fecha_hasta})
+        gastos = [dict(row._mapping) for row in result]
         
-        # Convertir a lista de diccionarios
-        gastos_list = [gasto.to_dict() for gasto in gastos]
-        
-        # Calcular totales por categoría usando el método del modelo
-        estadisticas = Gasto.calcular_gastos_por_fecha(fecha_desde_dt, fecha_hasta_dt)
-        categorias_dict = estadisticas['gastos_por_categoria'] if estadisticas else {}
-        
-        # Calcular total general
-        total_gastos = sum(gasto['monto'] for gasto in gastos_list)
-        
-        print(f"✅ Gastos obtenidos: {len(gastos_list)} gastos (${total_gastos:.2f})")
-        
+        # El resto de tu código sigue igual
         return jsonify({
             'success': True,
-            'gastos': gastos_list,
-            'categorias': categorias_dict,
-            'resumen': {
-                'total_gastos': total_gastos,
-                'cantidad_gastos': len(gastos_list),
-                'fecha_desde': fecha_desde,
-                'fecha_hasta': fecha_hasta,
-                'promedio_por_gasto': total_gastos / len(gastos_list) if gastos_list else 0
-            }
+            'gastos': gastos
         })
         
     except Exception as e:
-        print(f"❌ Error al obtener gastos: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': f'Error interno del servidor: {str(e)}'
-        }), 500
+        print(f"Error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/gastos', methods=['POST'])
@@ -5400,6 +5495,9 @@ def crear_gasto():
                 'error': 'La descripción no puede exceder 200 caracteres'
             }), 400
         
+        # Obtener caja abierta actual
+        caja_abierta = db.session.query(Caja).filter(Caja.estado == 'abierta').order_by(Caja.fecha_apertura.desc()).first()
+
         # Crear nuevo gasto
         gasto = Gasto(
             fecha=fecha_obj,
@@ -5408,7 +5506,8 @@ def crear_gasto():
             categoria=categoria,
             metodo_pago=metodo_pago,
             notas=notas if notas else None,
-            usuario_id=session['user_id']
+            usuario_id=session['user_id'],
+            caja_id=caja_abierta.id if caja_abierta else None  # ← SOLO ESTA LÍNEA ES NUEVA
         )
         
         db.session.add(gasto)
@@ -5431,41 +5530,70 @@ def crear_gasto():
         }), 500
 
 
-@app.route('/api/gastos/<int:gasto_id>', methods=['DELETE'])
-def eliminar_gasto(gasto_id):
-    """Eliminar un gasto (soft delete)"""
-    if 'user_id' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
-    
+@app.route('/api/gastos/<int:gasto_id>/estado', methods=['GET'])
+def verificar_estado_gasto(gasto_id):
     try:
-        gasto = Gasto.query.get_or_404(gasto_id)
+        # Consultar gasto con información de la caja
+        query = """
+        SELECT g.*, c.estado as estado_caja, c.fecha_cierre 
+        FROM gastos g
+        LEFT JOIN cajas c ON g.caja_id = c.id
+        WHERE g.id = %s
+        """
+        resultado = db.execute(query, (gasto_id,))
         
-        if not gasto.activo:
-            return jsonify({
-                'success': False,
-                'error': 'El gasto ya está eliminado'
-            }), 404
+        if not resultado:
+            return jsonify({'success': False, 'error': 'Gasto no encontrado'})
         
-        # Hacer soft delete
-        gasto.activo = False
-        gasto.fecha_modificacion = datetime.now()
+        gasto = resultado[0]
         
-        db.session.commit()
-        
-        print(f"✅ Gasto eliminado: ID {gasto_id} - {gasto.descripcion}")
-        
-        return jsonify({
+        response = {
             'success': True,
-            'message': 'Gasto eliminado exitosamente'
-        })
+            'caja_cerrada': gasto['estado_caja'] == 'cerrada',
+            'caja_id': gasto['caja_id'],
+            'estado_caja': gasto['estado_caja'],
+            'puede_eliminar': gasto['estado_caja'] != 'cerrada',
+            'monto': gasto['monto'],
+            'fecha': gasto['fecha']
+        }
+        
+        if gasto['estado_caja'] == 'cerrada':
+            response['razon'] = 'El gasto pertenece a una caja cerrada'
+            
+        return jsonify(response)
         
     except Exception as e:
-        db.session.rollback()
-        print(f"❌ Error al eliminar gasto: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': f'Error interno del servidor: {str(e)}'
-        }), 500
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/gastos/<int:gasto_id>', methods=['DELETE'])
+def eliminar_gasto(gasto_id):
+    try:
+        # Verificar estado de la caja ANTES de eliminar
+        query_verificacion = """
+        SELECT g.*, c.estado as estado_caja 
+        FROM gastos g
+        LEFT JOIN cajas c ON g.caja_id = c.id
+        WHERE g.id = %s
+        """
+        gasto = db.execute(query_verificacion, (gasto_id,))
+        
+        if not gasto:
+            return jsonify({'success': False, 'error': 'Gasto no encontrado'}), 404
+            
+        if gasto[0]['estado_caja'] == 'cerrada':
+            return jsonify({
+                'success': False, 
+                'error': 'No se puede eliminar gastos de cajas cerradas'
+            }), 403
+        
+        # Proceder con la eliminación
+        db.execute("DELETE FROM gastos WHERE id = %s", (gasto_id,))
+        
+        return jsonify({'success': True, 'message': 'Gasto eliminado exitosamente'})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/gastos/<int:gasto_id>', methods=['PUT'])
