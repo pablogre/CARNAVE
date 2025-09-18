@@ -204,30 +204,28 @@ class Producto(db.Model):
     activo = db.Column(db.Boolean, default=True)
     fecha_creacion = db.Column(db.DateTime, default=datetime.now)
     fecha_modificacion = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
-    costo = db.Column(Numeric(10, 2), default=0.00)  # ← AGREGAR ESTA LÍNEA
-    margen = db.Column(Numeric(5, 2), default=30.00)  # ← AGREGAR ESTA LÍNEA
+    costo = db.Column(Numeric(10, 2), default=0.00)
+    margen = db.Column(Numeric(5, 2), default=30.00)
     
-     # ✅ SOLO AGREGAR ESTOS 5 CAMPOS NUEVOS:
+    # Campos de combo
     es_combo = db.Column(db.Boolean, default=False)
     producto_base_id = db.Column(db.Integer, db.ForeignKey('producto.id'), nullable=True)
     cantidad_combo = db.Column(Numeric(8, 3), default=1.000)
     precio_unitario_base = db.Column(Numeric(10, 2), nullable=True)
     descuento_porcentaje = db.Column(Numeric(5, 2), default=0.00)
-    acceso_rapido = db.Column(db.Boolean, default=False)  # ← AGREGAR ESTA LÍNEA
-    orden_acceso_rapido = db.Column(db.Integer, default=0)  # ← Y ESTA LÍNEA TAMBIÉN
+    acceso_rapido = db.Column(db.Boolean, default=False)
+    orden_acceso_rapido = db.Column(db.Integer, default=0)
     producto_base_2_id = db.Column(db.Integer, db.ForeignKey('producto.id'), nullable=True)
     cantidad_combo_2 = db.Column(Numeric(8, 3), default=0.000)
     producto_base_3_id = db.Column(db.Integer, db.ForeignKey('producto.id'), nullable=True)
     cantidad_combo_3 = db.Column(Numeric(8, 3), default=0.000)
 
-
-    # ✅ AGREGAR ESTA RELACIÓN:
+    # Relaciones
     producto_base = db.relationship('Producto', 
                                     foreign_keys=[producto_base_id], 
                                     remote_side=[id], 
                                     backref='combos_derivados')
 
-    # AGREGAR ESTAS NUEVAS RELACIONES:
     producto_base_2 = db.relationship('Producto', 
                                     foreign_keys=[producto_base_2_id], 
                                     remote_side=[id])
@@ -239,7 +237,6 @@ class Producto(db.Model):
     def __repr__(self):
         return f'<Producto {self.codigo}: {self.nombre}>'
     
-    # ✅ ACTUALIZAR tu método to_dict() existente:
     def to_dict(self):
         """Convertir producto a diccionario"""
         return {
@@ -250,14 +247,12 @@ class Producto(db.Model):
             'precio': float(self.precio),
             'costo': float(self.costo) if self.costo else 0.0,
             'margen': float(self.margen) if self.margen else 0.0,
-            'stock': self.stock,
+            'stock': self.stock_dinamico,
             'categoria': self.categoria,
             'iva': float(self.iva),
             'activo': self.activo,
             'fecha_creacion': self.fecha_creacion.isoformat() if self.fecha_creacion else None,
             'fecha_modificacion': self.fecha_modificacion.isoformat() if self.fecha_modificacion else None,
-            
-            # ✅ AGREGAR ESTAS LÍNEAS AL FINAL:
             'es_combo': self.es_combo,
             'producto_base_id': self.producto_base_id,
             'cantidad_combo': float(self.cantidad_combo) if self.cantidad_combo else 1.0,
@@ -287,7 +282,7 @@ class Producto(db.Model):
         if not costo or margen is None:
             return 0.0
         return float(costo) * (1 + (float(margen) / 100))
-    # ✅ AGREGAR ESTOS MÉTODOS NUEVOS PARA COMBOS:
+    
     def calcular_precio_normal(self):
         """Calcular precio normal sin descuento"""
         if self.es_combo and self.precio_unitario_base and self.cantidad_combo:
@@ -306,45 +301,15 @@ class Producto(db.Model):
         """Obtener descripción que incluye información del combo"""
         if self.es_combo:
             ahorro = self.calcular_ahorro_combo()
-            cantidad_str = f"{self.cantidad_combo:g}"  # Elimina .0 si es entero
+            cantidad_str = f"{self.cantidad_combo:g}"
             return f"{self.nombre} - {cantidad_str} unidades (Ahorro: ${ahorro:.0f})"
         return self.nombre
     
-    @staticmethod
-    def obtener_productos_con_ofertas():
-        """Obtener productos base con sus ofertas"""
-        # Productos base (no combos)
-        productos_base = Producto.query.filter_by(es_combo=False, activo=True).all()
-        
-        resultado = []
-        for producto_base in productos_base:
-            # Agregar producto base
-            item_base = producto_base.to_dict()
-            item_base['tipo'] = 'BASE'
-            resultado.append(item_base)
-            
-            # Agregar sus combos/ofertas
-            combos = Producto.query.filter_by(
-                producto_base_id=producto_base.id, 
-                es_combo=True, 
-                activo=True
-            ).order_by(Producto.precio).all()
-            
-            for combo in combos:
-                item_combo = combo.to_dict()
-                item_combo['tipo'] = 'COMBO'
-                resultado.append(item_combo)
-        
-        return resultado
-
-    # Agregar estos métodos a la clase Producto existente
-
     def obtener_precio_con_oferta(self, cantidad):
         """Obtener precio considerando ofertas por volumen"""
         try:
             cantidad_decimal = float(cantidad)
             
-            # Buscar la mejor oferta aplicable
             oferta = OfertaVolumen.query.filter(
                 and_(
                     OfertaVolumen.producto_id == self.id,
@@ -369,7 +334,6 @@ class Producto(db.Model):
             precio_normal = float(self.precio)
             precio_con_oferta = self.obtener_precio_con_oferta(cantidad_decimal)
             
-            # Buscar la oferta aplicada
             oferta = OfertaVolumen.query.filter(
                 and_(
                     OfertaVolumen.producto_id == self.id,
@@ -413,6 +377,101 @@ class Producto(db.Model):
             activo=True
         ).count() > 0
 
+    def calcular_stock_disponible_combo(self):
+        """Calcular stock disponible para combos basado en productos base"""
+        if not self.es_combo:
+            return self.stock
+        
+        try:
+            stocks_disponibles = []
+            
+            # Producto base 1 (obligatorio)
+            if self.producto_base_id and self.cantidad_combo and float(self.cantidad_combo) > 0:
+                producto_base = Producto.query.get(self.producto_base_id)
+                if producto_base and producto_base.activo:
+                    cantidad_necesaria = float(self.cantidad_combo)
+                    stock_posible = int(float(producto_base.stock) / cantidad_necesaria) if cantidad_necesaria > 0 else 0
+                    stocks_disponibles.append(stock_posible)
+            
+            # Producto base 2 (opcional)
+            if self.producto_base_2_id and self.cantidad_combo_2 and float(self.cantidad_combo_2) > 0:
+                producto_base_2 = Producto.query.get(self.producto_base_2_id)
+                if producto_base_2 and producto_base_2.activo:
+                    cantidad_necesaria = float(self.cantidad_combo_2)
+                    stock_posible = int(float(producto_base_2.stock) / cantidad_necesaria) if cantidad_necesaria > 0 else 0
+                    stocks_disponibles.append(stock_posible)
+            
+            # Producto base 3 (opcional)
+            if self.producto_base_3_id and self.cantidad_combo_3 and float(self.cantidad_combo_3) > 0:
+                producto_base_3 = Producto.query.get(self.producto_base_3_id)
+                if producto_base_3 and producto_base_3.activo:
+                    cantidad_necesaria = float(self.cantidad_combo_3)
+                    stock_posible = int(float(producto_base_3.stock) / cantidad_necesaria) if cantidad_necesaria > 0 else 0
+                    stocks_disponibles.append(stock_posible)
+            
+            return min(stocks_disponibles) if stocks_disponibles else 0
+            
+        except Exception as e:
+            print(f"Error calculando stock de combo {self.codigo}: {e}")
+            return 0
+
+    @property
+    def stock_dinamico(self):
+        """Propiedad que devuelve stock dinámico para combos, stock normal para productos base"""
+        if self.es_combo:
+            return self.calcular_stock_disponible_combo()
+        else:
+            return self.stock
+
+    def debug_stock_combo(self):
+        """Función de debug para ver cálculo de stock paso a paso"""
+        if not self.es_combo:
+            return f"Producto base {self.codigo}: stock normal = {self.stock}"
+        
+        debug_info = [f"DEBUG COMBO {self.codigo}:"]
+        
+        if self.producto_base_id and self.cantidad_combo:
+            producto_base = Producto.query.get(self.producto_base_id)
+            if producto_base:
+                debug_info.append(f"  Base 1: {producto_base.codigo} stock={producto_base.stock}, necesita={self.cantidad_combo}")
+        
+        if self.producto_base_2_id and self.cantidad_combo_2:
+            producto_base_2 = Producto.query.get(self.producto_base_2_id)
+            if producto_base_2:
+                debug_info.append(f"  Base 2: {producto_base_2.codigo} stock={producto_base_2.stock}, necesita={self.cantidad_combo_2}")
+        
+        if self.producto_base_3_id and self.cantidad_combo_3:
+            producto_base_3 = Producto.query.get(self.producto_base_3_id)
+            if producto_base_3:
+                debug_info.append(f"  Base 3: {producto_base_3.codigo} stock={producto_base_3.stock}, necesita={self.cantidad_combo_3}")
+        
+        debug_info.append(f"  Stock dinámico resultante: {self.stock_dinamico}")
+        return "\n".join(debug_info)
+
+    @staticmethod
+    def obtener_productos_con_ofertas():
+        """Obtener productos base con sus ofertas"""
+        productos_base = Producto.query.filter_by(es_combo=False, activo=True).all()
+        
+        resultado = []
+        for producto_base in productos_base:
+            item_base = producto_base.to_dict()
+            item_base['tipo'] = 'BASE'
+            resultado.append(item_base)
+            
+            combos = Producto.query.filter_by(
+                producto_base_id=producto_base.id, 
+                es_combo=True, 
+                activo=True
+            ).order_by(Producto.precio).all()
+            
+            for combo in combos:
+                item_combo = combo.to_dict()
+                item_combo['tipo'] = 'COMBO'
+                resultado.append(item_combo)
+        
+        return resultado
+
     @staticmethod
     def obtener_con_ofertas():
         """Obtener productos que tienen ofertas por volumen"""
@@ -421,7 +480,9 @@ class Producto(db.Model):
                 Producto.activo == True,
                 OfertaVolumen.activo == True
             )
-        ).distinct().all()    
+        ).distinct().all()
+
+
 
 class OfertaVolumen(db.Model):
     """Modelo para ofertas por volumen de productos"""
@@ -1833,7 +1894,7 @@ def obtener_producto_detalle(producto_id):
             'precio': float(producto.precio),
             'costo': round(costo, 2),
             'margen': float(margen),
-            'stock': producto.stock,
+            'stock': producto.stock_dinamico,
             'categoria': producto.categoria or '',
             'iva': float(producto.iva),
             'activo': producto.activo,
@@ -2241,7 +2302,7 @@ def buscar_productos_admin():
                 'precio': float(producto.precio),
                 'costo': round(costo, 2),
                 'margen': round(margen, 1),
-                'stock': producto.stock,
+                'stock': producto.stock_dinamico,
                 'categoria': producto.categoria,
                 'iva': float(producto.iva),
                 'activo': producto.activo,
@@ -2400,14 +2461,21 @@ def crear_combo():
         
         # Datos básicos del combo
         combo.producto_base_id = datos['producto_base_id']
-        combo.cantidad_combo = datos['cantidad_combo']
-        combo.precio = datos['precio_combo']
+        combo.cantidad_combo = Decimal(str(float(datos['cantidad_combo'])))  # Conversión segura
+        combo.precio = Decimal(str(datos['precio_combo']))
         
         # NUEVOS CAMPOS: Productos adicionales
         combo.producto_base_2_id = datos.get('producto_base_2_id')
-        combo.cantidad_combo_2 = datos.get('cantidad_combo_2', 0)
+        if datos.get('cantidad_combo_2'):
+            combo.cantidad_combo_2 = Decimal(str(float(datos['cantidad_combo_2'])))
+        else:
+            combo.cantidad_combo_2 = Decimal('0')
+        
         combo.producto_base_3_id = datos.get('producto_base_3_id')
-        combo.cantidad_combo_3 = datos.get('cantidad_combo_3', 0)
+        if datos.get('cantidad_combo_3'):
+            combo.cantidad_combo_3 = Decimal(str(float(datos['cantidad_combo_3'])))
+        else:
+            combo.cantidad_combo_3 = Decimal('0')
         
         # Generar código automático si no se proporciona
         if not datos.get('codigo_combo'):
@@ -2425,7 +2493,7 @@ def crear_combo():
         
         # Validar que el precio de oferta sea menor al precio normal
         precio_normal_total = calcular_precio_normal_multi(combo)
-        if combo.precio >= precio_normal_total:
+        if float(combo.precio) >= precio_normal_total:
             return jsonify({
                 'success': False, 
                 'error': 'El precio de oferta debe ser menor al precio normal'
@@ -2446,28 +2514,57 @@ def crear_combo():
 
 def calcular_precio_normal_multi(combo):
     """Calcular precio normal total del combo multi-producto"""
-    precio_total = 0
-    
-    # Producto 1 (obligatorio)
-    if combo.producto_base_id and combo.cantidad_combo:
-        producto1 = Producto.query.get(combo.producto_base_id)
-        if producto1:
-            precio_total += producto1.precio * combo.cantidad_combo
-    
-    # Producto 2 (opcional)
-    if combo.producto_base_2_id and combo.cantidad_combo_2:
-        producto2 = Producto.query.get(combo.producto_base_2_id)
-        if producto2:
-            precio_total += producto2.precio * combo.cantidad_combo_2
-    
-    # Producto 3 (opcional)
-    if combo.producto_base_3_id and combo.cantidad_combo_3:
-        producto3 = Producto.query.get(combo.producto_base_3_id)
-        if producto3:
-            precio_total += producto3.precio * combo.cantidad_combo_3
-    
-    return precio_total
+    try:
+        precio_total = 0.0  # Empezar con float
+        
+        print(f"🔍 DEBUG calcular_precio_normal_multi:")
+        print(f"   Combo ID: {getattr(combo, 'id', 'NUEVO')}")
+        
+        # Producto 1 (obligatorio)
+        if combo.producto_base_id and combo.cantidad_combo:
+            producto1 = Producto.query.get(combo.producto_base_id)
+            if producto1:
+                precio_unit = float(producto1.precio)
+                cantidad = float(combo.cantidad_combo)
+                subtotal = precio_unit * cantidad
+                precio_total += subtotal
+                
+                print(f"   Producto 1: {precio_unit} x {cantidad} = {subtotal}")
+        
+        # Producto 2 (opcional)
+        if combo.producto_base_2_id and combo.cantidad_combo_2 and float(combo.cantidad_combo_2) > 0:
+            producto2 = Producto.query.get(combo.producto_base_2_id)
+            if producto2:
+                precio_unit = float(producto2.precio)
+                cantidad = float(combo.cantidad_combo_2)
+                subtotal = precio_unit * cantidad
+                precio_total += subtotal
+                
+                print(f"   Producto 2: {precio_unit} x {cantidad} = {subtotal}")
+        
+        # Producto 3 (opcional)
+        if combo.producto_base_3_id and combo.cantidad_combo_3 and float(combo.cantidad_combo_3) > 0:
+            producto3 = Producto.query.get(combo.producto_base_3_id)
+            if producto3:
+                precio_unit = float(producto3.precio)
+                cantidad = float(combo.cantidad_combo_3)
+                subtotal = precio_unit * cantidad
+                precio_total += subtotal
+                
+                print(f"   Producto 3: {precio_unit} x {cantidad} = {subtotal}")
+        
+        print(f"   Total calculado: {precio_total}")
+        return precio_total
+        
+    except Exception as e:
+        print(f"❌ Error en calcular_precio_normal_multi: {str(e)}")
+        print(f"❌ Tipos de datos:")
+        print(f"   combo.cantidad_combo: {type(getattr(combo, 'cantidad_combo', None))}")
+        print(f"   combo.cantidad_combo_2: {type(getattr(combo, 'cantidad_combo_2', None))}")
+        print(f"   combo.cantidad_combo_3: {type(getattr(combo, 'cantidad_combo_3', None))}")
+        raise e
 
+        
 def generar_codigo_combo_multi(combo):
     """Generar código automático para combo multi-producto"""
     codigos = []
@@ -2711,7 +2808,7 @@ def buscar_productos(termino):
             'precio_base': float(producto_exacto.precio),
             'costo': float(producto_exacto.costo) if producto_exacto.costo else 0.0,
             'margen': float(producto_exacto.margen) if producto_exacto.margen else 0.0,
-            'stock': producto_exacto.stock,
+            'stock': producto_exacto.stock_dinamico,
             'iva': float(producto_exacto.iva),
             'match_tipo': 'codigo_exacto',
             'descripcion': producto_exacto.descripcion or '',
@@ -2757,7 +2854,7 @@ def buscar_productos(termino):
             'precio_base': float(producto.precio),
             'costo': float(producto.costo) if producto.costo else 0.0,
             'margen': float(producto.margen) if producto.margen else 0.0,
-            'stock': producto.stock,
+            'stock': producto.stock_dinamico,
             'iva': float(producto.iva),
             'match_tipo': match_tipo,
             'descripcion': producto.descripcion or '',
@@ -2798,7 +2895,7 @@ def get_producto_por_id(producto_id):
             'precio': float(producto.precio),
             'costo': float(producto.costo) if producto.costo else 0.0,  # ← NUEVO
             'margen': float(producto.margen) if producto.margen else 0.0,  # ← NUEVO
-            'stock': producto.stock,
+            'stock': producto.stock_dinamico,
             'iva': float(producto.iva),
             'descripcion': producto.descripcion or '',
             'es_combo': producto.es_combo,
@@ -2823,7 +2920,7 @@ def get_producto(codigo):
             'precio': float(producto.precio),
             'costo': float(producto.costo) if producto.costo else 0.0,  # ← NUEVO
             'margen': float(producto.margen) if producto.margen else 0.0,  # ← NUEVO
-            'stock': producto.stock,
+            'stock': producto.stock_dinamico,
             'iva': float(producto.iva),
             'descripcion': producto.descripcion or '',
             'es_combo': producto.es_combo,
@@ -2898,6 +2995,43 @@ def registrar_descuento_factura(factura_id, porcentaje, monto, total_original, u
         return False
 
 
+def actualizar_stock_combo(combo, cantidad_vendida):
+    """Actualizar stock de productos base al vender combo"""
+    try:
+        print(f"Actualizando stock para combo {combo.codigo} - cantidad vendida: {cantidad_vendida}")
+        
+        # Producto base 1 (obligatorio)
+        if combo.producto_base_id and combo.cantidad_combo and float(combo.cantidad_combo) > 0:
+            producto_base = Producto.query.get(combo.producto_base_id)
+            if producto_base:
+                descuento = float(combo.cantidad_combo) * cantidad_vendida
+                stock_anterior = float(producto_base.stock)
+                producto_base.stock -= Decimal(str(descuento))
+                print(f"  Base 1 - {producto_base.codigo}: {stock_anterior} - {descuento} = {float(producto_base.stock)}")
+        
+        # Producto base 2 (opcional)
+        if combo.producto_base_2_id and combo.cantidad_combo_2 and float(combo.cantidad_combo_2) > 0:
+            producto_base_2 = Producto.query.get(combo.producto_base_2_id)
+            if producto_base_2:
+                descuento = float(combo.cantidad_combo_2) * cantidad_vendida
+                stock_anterior = float(producto_base_2.stock)
+                producto_base_2.stock -= Decimal(str(descuento))
+                print(f"  Base 2 - {producto_base_2.codigo}: {stock_anterior} - {descuento} = {float(producto_base_2.stock)}")
+        
+        # Producto base 3 (opcional)
+        if combo.producto_base_3_id and combo.cantidad_combo_3 and float(combo.cantidad_combo_3) > 0:
+            producto_base_3 = Producto.query.get(combo.producto_base_3_id)
+            if producto_base_3:
+                descuento = float(combo.cantidad_combo_3) * cantidad_vendida
+                stock_anterior = float(producto_base_3.stock)
+                producto_base_3.stock -= Decimal(str(descuento))
+                print(f"  Base 3 - {producto_base_3.codigo}: {stock_anterior} - {descuento} = {float(producto_base_3.stock)}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error actualizando stock de combo {combo.codigo}: {e}")
+        return False
 
 # FUNCIÓN PROCESAR_VENTA
 
@@ -3046,11 +3180,20 @@ def procesar_venta():
             # Actualizar stock
             producto = Producto.query.get(item['producto_id'])
             if producto:
-                producto.stock -= Decimal(str(item['cantidad']))
-                print(f"📦 Stock actualizado para {producto.nombre}: {producto.stock}")
-                print(f"💰 Detalle guardado: IVA {iva_porcentaje}% = ${importe_iva:.2f}")
-            else:
-                print(f"⚠️ Producto ID {item['producto_id']} no encontrado")
+                if producto.es_combo:
+                    # Para combos: descontar stock de productos base
+                    print(f"Procesando venta de combo: {producto.codigo}")
+                    exito = actualizar_stock_combo(producto, item['cantidad'])
+                    if exito:
+                        print(f"Stock de productos base actualizado para combo {producto.codigo}")
+                    else:
+                        print(f"Error actualizando stock de combo {producto.codigo}")
+                else:
+                    # Para productos base: descontar stock normal
+                    stock_anterior = float(producto.stock)
+                    producto.stock -= Decimal(str(item['cantidad']))
+                    print(f"Stock actualizado - {producto.codigo}: {stock_anterior} - {item['cantidad']} = {float(producto.stock)}")
+             
         
         # PASO 5: Agregar medios de pago
         print(f"💳 Agregando {len(medios_pago)} medios de pago...")
@@ -3669,6 +3812,43 @@ def medios_pago_factura(factura_id):
     except Exception as e:
         print(f"Error obteniendo medios de pago: {e}")
         return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/test_stock_dinamico')
+def test_stock_dinamico():
+    """Ruta temporal para probar cálculo de stock dinámico"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    
+    try:
+        # Obtener todos los combos
+        combos = Producto.query.filter_by(es_combo=True, activo=True).all()
+        
+        resultados = []
+        
+        for combo in combos:
+            resultado = {
+                'codigo': combo.codigo,
+                'nombre': combo.nombre,
+                'stock_actual': combo.stock,
+                'stock_dinamico': combo.stock_dinamico,
+                'diferencia': combo.stock_dinamico - combo.stock,
+                'debug': combo.debug_stock_combo()
+            }
+            resultados.append(resultado)
+        
+        return jsonify({
+            'success': True,
+            'combos_analizados': len(resultados),
+            'resultados': resultados
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 
 
 if __name__ == '__main__':
@@ -5320,7 +5500,7 @@ def obtener_productos_acceso_rapido():
                 'codigo': producto.codigo,
                 'nombre': producto.nombre,
                 'precio': float(producto.precio),
-                'stock': producto.stock,
+                'stock': producto.stock_dinamico,
                 'iva': float(producto.iva),
                 'orden': producto.orden_acceso_rapido
             })
@@ -6282,7 +6462,7 @@ def obtener_productos_sin_ofertas():
                 'codigo': producto.codigo,
                 'nombre': producto.nombre,
                 'precio': float(producto.precio),
-                'stock': producto.stock,
+                'stock': producto.stock_dinamico,
                 'categoria': producto.categoria
             })
         
@@ -6565,6 +6745,38 @@ def debug_certificados():
             'success': False,
             'error': str(e)
         }), 500
+
+
+@app.route('/api/comparar_stocks')
+def comparar_stocks():
+    """Comparar stock actual vs stock dinámico"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    
+    try:
+        # Solo combos para comparar
+        combos = Producto.query.filter_by(es_combo=True, activo=True).all()
+        
+        comparaciones = []
+        for combo in combos:
+            comparaciones.append({
+                'codigo': combo.codigo,
+                'nombre': combo.nombre,
+                'stock_actual': float(combo.stock),
+                'stock_dinamico': combo.stock_dinamico,
+                'diferencia': combo.stock_dinamico - float(combo.stock),
+                'necesita_ajuste': combo.stock_dinamico != float(combo.stock)
+            })
+        
+        return jsonify({
+            'success': True,
+            'comparaciones': comparaciones,
+            'combos_con_diferencias': len([c for c in comparaciones if c['necesita_ajuste']])
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
 
 
 

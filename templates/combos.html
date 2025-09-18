@@ -697,6 +697,12 @@
                     <p class="mb-0">Un combo es una <strong>oferta especial</strong> que permite combinar <strong>1, 2 o 3 productos diferentes</strong> en una sola oferta con un <strong>precio con descuento</strong>. Ideal para promociones, packs temáticos o ofertas por volumen.</p>
                 </div>
 
+                <!-- NUEVO: Sistema de Stock Dinámico -->
+                <div class="alert alert-success">
+                    <h6><i class="fas fa-sync-alt"></i> NUEVO: Sistema de Stock Dinámico</h6>
+                    <p class="mb-0">Los combos ahora usan <strong>stock calculado automáticamente</strong> basado en la disponibilidad de los productos base. No necesitas gestionar stock de combos manualmente.</p>
+                </div>
+
                 <!-- Proceso paso a paso -->
                 <h6><i class="fas fa-list-ol"></i> Proceso de Creación (Paso a Paso)</h6>
                 <div class="row">
@@ -759,8 +765,47 @@
                     </div>
                 </div>
 
+                <!-- NUEVO: Cómo Funciona el Stock Dinámico -->
+                <h6><i class="fas fa-sync-alt text-success"></i> Sistema de Stock Dinámico</h6>
+                <div class="alert alert-primary">
+                    <h6><i class="fas fa-calculator"></i> ¿Cómo se Calcula el Stock?</h6>
+                    <p>El stock de combos se calcula automáticamente basado en la disponibilidad de los productos base:</p>
+                    <div class="bg-light p-3 rounded">
+                        <strong>Ejemplo:</strong> Combo "Pack Asado" (3kg carne + 2 chorizos)<br>
+                        • <strong>Carne disponible:</strong> 15kg<br>
+                        • <strong>Chorizos disponibles:</strong> 8 unidades<br>
+                        • <strong>Stock del combo:</strong> 4 (limitado por: 8 ÷ 2 = 4)<br>
+                        <small class="text-muted">El stock siempre está limitado por el producto que menos stock tiene</small>
+                    </div>
+                </div>
+
+                <!-- NUEVO: Descuento de Stock al Vender -->
+                <h6><i class="fas fa-shopping-cart text-primary"></i> Al Realizar una Venta</h6>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="alert alert-danger">
+                            <h6><i class="fas fa-times"></i> Antes (Sistema Anterior)</h6>
+                            <ul class="mb-0">
+                                <li>Se descontaba stock del combo únicamente</li>
+                                <li>Productos base no se actualizaban</li>
+                                <li>Discrepancias entre stock real y mostrado</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="alert alert-success">
+                            <h6><i class="fas fa-check"></i> Ahora (Sistema Dinámico)</h6>
+                            <ol class="mb-0">
+                                <li><strong>Al vender 1 combo</strong> se descuenta automáticamente de productos base</li>
+                                <li><strong>El stock del combo se recalcula</strong> automáticamente</li>
+                                <li><strong>No se toca el stock físico del combo</strong></li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Ejemplos prácticos actualizados -->
-                <h6><i class="fas fa-examples"></i> Ejemplos Prácticos Multi-Producto</h6>
+                <h6><i class="fas fa-chart-line"></i> Ejemplos Prácticos Multi-Producto</h6>
                 <div class="table-responsive">
                     <table class="table table-striped">
                         <thead class="table-primary">
@@ -807,7 +852,7 @@
                             <ul class="mb-0">
                                 <li><strong>Flexibilidad:</strong> 1, 2 o 3 productos diferentes</li>
                                 <li><strong>Automatización:</strong> Códigos y nombres automáticos</li>
-                                <li><strong>Stock Independiente:</strong> Control separado por producto</li>
+                                <li><strong>Stock Dinámico:</strong> Cálculo automático en tiempo real</li>
                                 <li><strong>Cantidades Flexibles:</strong> Decimales permitidos</li>
                                 <li><strong>Validaciones:</strong> Impide ofertas sin descuento real</li>
                                 <li><strong>Packs Temáticos:</strong> Combina productos relacionados</li>
@@ -819,7 +864,7 @@
                             <h6><i class="fas fa-exclamation-triangle"></i> Consideraciones</h6>
                             <ul class="mb-0">
                                 <li><strong>Producto 1:</strong> Siempre obligatorio</li>
-                                <li><strong>Stock:</strong> Gestión independiente requerida</li>
+                                <li><strong>Stock:</strong> Calculado automáticamente desde productos base</li>
                                 <li><strong>Precio:</strong> Debe ser menor al precio normal total</li>
                                 <li><strong>Eliminación:</strong> Solo si no tiene ventas</li>
                                 <li><strong>Productos Base:</strong> Deben existir y estar activos</li>
@@ -858,24 +903,27 @@
                     </div>
                 </div>
 
-                <!-- Gestión de Stock -->
-                <h6><i class="fas fa-boxes"></i> Gestión de Stock Multi-Producto</h6>
+                <!-- ACTUALIZADO: Gestión de Stock Simplificada -->
+                <h6><i class="fas fa-boxes"></i> Gestión de Stock Simplificada</h6>
                 <div class="alert alert-info">
-                    <p><strong>El stock del combo depende del producto que menos stock tenga:</strong></p>
                     <div class="row">
                         <div class="col-md-4">
-                            <strong><i class="fas fa-calculator text-primary"></i> Cálculo Automático:</strong><br>
-                            <small>Si Producto A tiene 10 unidades y necesitas 2<br>
-                            Y Producto B tiene 6 unidades y necesitas 1<br>
-                            Stock del combo = 6 (limitado por Producto B)</small>
+                            <strong><i class="fas fa-box text-success"></i> Para Productos Base:</strong><br>
+                            <small>• <strong>Entrada:</strong> Agregar stock (compras)<br>
+                            • <strong>Salida:</strong> Se descuenta automáticamente al vender combos<br>
+                            • <strong>Ajuste:</strong> Inventario manual</small>
                         </div>
                         <div class="col-md-4">
-                            <strong><i class="fas fa-plus text-success"></i> Entrada:</strong><br>
-                            <small>Agregar stock (compras, devoluciones)</small>
+                            <strong><i class="fas fa-layer-group text-primary"></i> Para Combos:</strong><br>
+                            <small>• <strong>Stock:</strong> Calculado automáticamente<br>
+                            • <strong>No requiere gestión manual</strong><br>
+                            • <strong>Se actualiza en tiempo real</strong></small>
                         </div>
                         <div class="col-md-4">
-                            <strong><i class="fas fa-edit text-primary"></i> Ajuste:</strong><br>
-                            <small>Establecer cantidad exacta (inventario)</small>
+                            <strong><i class="fas fa-sync-alt text-info"></i> Ventajas:</strong><br>
+                            <small>• <strong>Stock siempre preciso</strong><br>
+                            • <strong>Gestión automática</strong><br>
+                            • <strong>Consistencia total</strong></small>
                         </div>
                     </div>
                 </div>
@@ -888,11 +936,11 @@
                         <small>Sin Stock</small>
                     </div>
                     <div>
-                        <span class="badge bg-warning text-dark fs-6">5</span><br>
+                        <span class="badge bg-warning text-dark fs-6">1-5</span><br>
                         <small>Stock Bajo</small>
                     </div>
                     <div>
-                        <span class="badge bg-success fs-6">25</span><br>
+                        <span class="badge bg-success fs-6">6+</span><br>
                         <small>Stock Bueno</small>
                     </div>
                     <div>
@@ -905,14 +953,26 @@
                     </div>
                 </div>
 
-                <!-- Tips adicionales -->
+                <!-- ACTUALIZADO: Tips adicionales -->
                 <div class="alert alert-primary mt-3">
-                    <h6><i class="fas fa-tips"></i> Consejos Prácticos</h6>
+                    <h6><i class="fas fa-lightbulb"></i> Consejos Prácticos</h6>
                     <ul class="mb-0">
                         <li><strong>Productos Relacionados:</strong> Combina productos que se compran juntos habitualmente</li>
                         <li><strong>Márgenes Equilibrados:</strong> Asegúrate de mantener rentabilidad en el descuento</li>
-                        <li><strong>Stock Balanceado:</strong> Verifica que todos los productos tengan stock suficiente</li>
+                        <li><strong>Stock de Productos Base:</strong> Mantén stock suficiente de todos los productos base</li>
+                        <li><strong>Monitoreo:</strong> El sistema te alertará automáticamente cuando algún producto base esté bajo</li>
                         <li><strong>Nombres Claros:</strong> Los nombres automáticos son descriptivos pero puedes personalizarlos</li>
+                    </ul>
+                </div>
+
+                <!-- NUEVO: Diferencia entre Stock Físico y Dinámico -->
+                <div class="alert alert-warning">
+                    <h6><i class="fas fa-info-circle"></i> Importante: Stock Dinámico vs Stock Físico</h6>
+                    <ul class="mb-0">
+                        <li><strong>Stock Físico del Combo:</strong> Permanece sin cambios en la base de datos</li>
+                        <li><strong>Stock Dinámico:</strong> Se calcula y muestra en tiempo real</li>
+                        <li><strong>Ventas:</strong> Descontarán automáticamente de los productos base correctos</li>
+                        <li><strong>Reportes:</strong> Reflejarán movimientos reales de productos base</li>
                     </ul>
                 </div>
             </div>
@@ -927,7 +987,6 @@
         </div>
     </div>
 </div>
-
 
 
 {% endblock %}
