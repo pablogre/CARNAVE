@@ -1,5 +1,9 @@
 # caja.py - Sistema de Caja SIMPLIFICADO para evitar problemas de relaciones
 
+##### ver estas rutas para debug
+#http://localhost:5080/api/caja/estado muestra el estado de la caja
+# http://localhost:5080/api/caja/ultima muestra como esta conformada la caja
+
 from flask import Blueprint, request, jsonify, session
 from datetime import datetime, timedelta
 from sqlalchemy import and_, or_, func, desc, asc, text

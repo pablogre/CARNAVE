@@ -2,7 +2,7 @@
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, flash
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import Numeric, or_, and_, func, desc, asc, case  
+from sqlalchemy import Numeric, or_, and_, func, desc, asc, case, text  
 from sqlalchemy.orm import joinedload
 #from sqlalchemy import Numeric, or_, and_  # ← IMPORTAR AQUÍ
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -5675,8 +5675,15 @@ def crear_gasto():
                 'error': 'La descripción no puede exceder 200 caracteres'
             }), 400
         
-        # Obtener caja abierta actual
-        caja_abierta = db.session.query(Caja).filter(Caja.estado == 'abierta').order_by(Caja.fecha_apertura.desc()).first()
+        # Obtener caja abierta actual - CORREGIDO
+        caja_abierta_query = db.session.execute(text("""
+            SELECT id FROM cajas 
+            WHERE estado = 'abierta' 
+            ORDER BY fecha_apertura DESC 
+            LIMIT 1
+        """)).fetchone()
+        
+        caja_abierta_id = caja_abierta_query[0] if caja_abierta_query else None
 
         # Crear nuevo gasto
         gasto = Gasto(
@@ -5687,7 +5694,7 @@ def crear_gasto():
             metodo_pago=metodo_pago,
             notas=notas if notas else None,
             usuario_id=session['user_id'],
-            caja_id=caja_abierta.id if caja_abierta else None  # ← SOLO ESTA LÍNEA ES NUEVA
+            caja_id=caja_abierta_id  # LÍNEA CORREGIDA
         )
         
         db.session.add(gasto)
@@ -6778,6 +6785,167 @@ def comparar_stocks():
         return jsonify({'success': False, 'error': str(e)})
 
 
+@app.route('/carteles_precios')
+def carteles_precios():
+    """Vista principal para imprimir carteles de precios"""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    return render_template('carteles_precios.html')
+
+@app.route('/api/productos_para_carteles')
+def api_productos_para_carteles():
+    """API para obtener productos con información para carteles"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    
+    try:
+        # Obtener parámetros de filtro
+        buscar = request.args.get('buscar', '').strip()
+        categoria = request.args.get('categoria', '').strip()
+        estado = request.args.get('estado', 'activo')
+        ofertas = request.args.get('ofertas', 'todos')
+        
+        # Construir query base
+        query = Producto.query
+        
+        # Aplicar filtros
+        if buscar:
+            query = query.filter(
+                or_(
+                    Producto.codigo.ilike(f'%{buscar}%'),
+                    Producto.nombre.ilike(f'%{buscar}%'),
+                    Producto.descripcion.ilike(f'%{buscar}%')
+                )
+            )
+        
+        if categoria:
+            query = query.filter(Producto.categoria == categoria)
+        
+        if estado == 'activo':
+            query = query.filter(Producto.activo == True)
+        
+        # Filtro de ofertas
+        if ofertas == 'con_ofertas':
+            # Productos con ofertas por volumen O combos
+            query = query.filter(
+                or_(
+                    Producto.es_combo == True,
+                    Producto.id.in_(
+                        db.session.query(OfertaVolumen.producto_id).filter(
+                            OfertaVolumen.activo == True
+                        ).distinct()
+                    )
+                )
+            )
+        elif ofertas == 'sin_ofertas':
+            # Productos SIN ofertas y que NO sean combos
+            query = query.filter(
+                and_(
+                    Producto.es_combo == False,
+                    ~Producto.id.in_(
+                        db.session.query(OfertaVolumen.producto_id).filter(
+                            OfertaVolumen.activo == True
+                        ).distinct()
+                    )
+                )
+            )
+        
+        # Obtener resultados
+        productos = query.order_by(Producto.codigo).all()
+        
+        # Formatear respuesta
+        resultado = []
+        for producto in productos:
+            # Verificar si tiene ofertas
+            tiene_ofertas = producto.tiene_ofertas_volumen()
+            
+            producto_dict = {
+                'id': producto.id,
+                'codigo': producto.codigo,
+                'nombre': producto.nombre,
+                'descripcion': producto.descripcion,
+                'precio': float(producto.precio),
+                'stock_dinamico': producto.stock_dinamico,
+                'categoria': producto.categoria,
+                'activo': producto.activo,
+                'es_combo': producto.es_combo,
+                'tiene_ofertas': tiene_ofertas,
+                'ahorro_combo': producto.calcular_ahorro_combo() if producto.es_combo else 0
+            }
+            
+            resultado.append(producto_dict)
+        
+        return jsonify({
+            'success': True,
+            'productos': resultado,
+            'total': len(resultado)
+        })
+        
+    except Exception as e:
+        print(f"Error en productos_para_carteles: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/imprimir_carteles', methods=['POST'])
+def imprimir_carteles():
+    """Imprimir carteles de precios en impresora térmica"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    
+    try:
+        data = request.json
+        productos_ids = data.get('productos_ids', [])
+        
+        if not productos_ids:
+            return jsonify({
+                'success': False,
+                'error': 'No se especificaron productos'
+            }), 400
+        
+        # Obtener productos
+        productos = Producto.query.filter(Producto.id.in_(productos_ids)).all()
+        
+        if not productos:
+            return jsonify({
+                'success': False,
+                'error': 'No se encontraron productos'
+            }), 400
+        
+        # Generar e imprimir carteles
+        carteles_impresos = 0
+        
+        for producto in productos:
+            try:
+                # Verificar si tiene ofertas
+                tiene_ofertas = producto.tiene_ofertas_volumen() or producto.es_combo
+                
+                # Generar cartel
+                resultado = impresora_termica.imprimir_cartel_precio(producto, tiene_ofertas)
+                
+                if resultado:
+                    carteles_impresos += 1
+                    print(f"Cartel impreso: {producto.codigo} - {producto.nombre}")
+                else:
+                    print(f"Error imprimiendo cartel: {producto.codigo}")
+                    
+            except Exception as e:
+                print(f"Error imprimiendo producto {producto.codigo}: {e}")
+        
+        return jsonify({
+            'success': True,
+            'carteles_impresos': carteles_impresos,
+            'total_solicitados': len(productos),
+            'mensaje': f'Se imprimieron {carteles_impresos} de {len(productos)} carteles solicitados'
+        })
+        
+    except Exception as e:
+        print(f"Error en imprimir_carteles: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 
 app.run(debug=True, host='0.0.0.0', port=5080)
